@@ -1,0 +1,12 @@
+-Q concert/execution/theories ConCert.Execution
+-Q concert/execution/test ConCert.Execution.Test
+-Q concert/utils/theories ConCert.Utils
+
+-Q specifications/StructuredPoolsSpec PhD.Specifications.StructuredPoolsSpec
+specifications/StructuredPoolsSpec/StructuredPoolsSpec.v
+
+-Q specifications/FA2Spec PhD.Specifications.FA2Spec
+specifications/FA2Spec/FA2Spec.v
+
+-Q specifications/Dexter2Spec PhD.Specifications.Dexter2Spec
+specifications/Dexter2Spec/Dexter2Spec.v
