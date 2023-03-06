@@ -1,4 +1,4 @@
-# Meta-Theoretic Reasoning in Formal Verification of Financial Smart Contracts
+# Formal Verification of Financial Smart Contracts
 
 This repository is one of two that houses the code of my PhD thesis, the other being my [fork of ConCert](https://github.com/differentialderek/phd-thesis-ConCert-fork), which is imported as a Git submodule.
 This repository is designed to be self-contained, but can also be used as a companion to the text of my thesis, [which can be found here](TODO).
