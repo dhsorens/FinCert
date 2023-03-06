@@ -1,0 +1,1 @@
+(* a formal proof that the structured pools contract conforms to its specification *)
