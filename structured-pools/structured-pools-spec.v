@@ -1,1 +1,0 @@
-(* the specification of the structured pools contract *)
