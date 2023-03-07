@@ -2,6 +2,7 @@
 
 From PhD.Specifications.FA2Spec Require FA2Spec.
 From ConCert.Execution Require Import Blockchain.
+From ConCert.Execution Require Import BuildUtils.
 From ConCert.Execution Require Import Containers.
 From ConCert.Execution Require Import ContractCommon.
 From ConCert.Execution Require Import Monad.
@@ -23,7 +24,8 @@ Open Scope string.
 
 (* =============================================================================
  * Defintions:
-      We begin with some type and auxiliary definitions
+      We begin with some type and auxiliary definitions which we use for the 
+      contract specification.
  * ============================================================================= *)
 
 Section Definitions.
@@ -108,8 +110,7 @@ Context {Base : ChainBase}
  * ============================================================================= *)
 
     { Setup Msg State Error : Type }
-    `{Serializable Msg}  `{Serializable Setup}  `{Serializable State} `{Serializable Error}
-    {contract : Contract Setup Msg State Error}.
+    `{Serializable Msg}  `{Serializable Setup}  `{Serializable State} `{Serializable Error}.
 
 (* Specification of the Msg type:
   - A Pool entrypoint, whose interface is defined by the pool_data type
@@ -175,7 +176,6 @@ Definition pool_entrypoint_check (contract : Contract Setup Msg State Error) : P
     FMap.find msg_payload.(token_pooled) (stor_rates cstate) = None -> 
     receive contract chain ctx cstate (Some msg) = 
       Err(error_to_Error error_TOKEN_NOT_FOUND).
-Context {pool_entrypoint_check_pf : pool_entrypoint_check contract}.
 
 
 Definition pool_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
@@ -192,7 +192,6 @@ Definition pool_entrypoint_check_2 (contract : Contract Setup Msg State Error) :
     receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
     exists r_x, 
     FMap.find msg_payload.(token_pooled) (stor_rates cstate) = Some r_x.
-Context {pool_entrypoint_check_2_pf : pool_entrypoint_check_2 contract}.
 
 
 (* When the POOL entrypoint is successfully called, it emits a TRANSFER call to the 
@@ -222,7 +221,6 @@ Definition pool_emits_transfer (contract : Contract Setup Msg State Error) : Pro
     In transfer_to transfer_data.(FA2Spec.txs) /\
     (* whose quantity is the quantity pooled *)
     transfer_to.(FA2Spec.amount) = msg_payload.(qty_pooled).
-Context {pool_emits_transfer_pf : pool_emits_transfer contract}.
 
 
 (* When the POOL entrypoint is successfully called, it emits a MINT call to the 
@@ -253,7 +251,21 @@ Definition pool_emits_mint (contract : Contract Setup Msg State Error) : Prop :=
     mint_data.(FA2Spec.qty) = msg_payload.(qty_pooled) * r_x / 1_000_000 /\
     (* TODO perhaps also specify that the minted tokens go to pooler *)
     mint_data.(FA2Spec.mint_owner) = ctx.(ctx_from).
-Context {pool_emits_mint_pf : pool_emits_mint contract}.
+
+(* When the POOL entrypoint is successfully called, the TRANSFER and MINT transactions
+    are the only transactions emitted by the contract *)
+Definition pool_atomic (contract : Contract Setup Msg State Error) : Prop := 
+    forall bstate caddr cstate chain ctx msg msg_payload cstate' acts, 
+    (* reachable bstate *)
+    reachable bstate -> 
+    (* the contract address is caddr with state cstate *)
+    env_contracts bstate caddr = Some (contract : WeakContract) -> 
+    contract_state bstate caddr = Some cstate -> 
+    (* the call to POOL was successful *)
+    msg = pool msg_payload -> 
+    receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
+    (* we have a MINT call in acts and a TRANSFER call *)
+    length acts = 2%nat.
 
 
 (* When the POOL entrypoint is successfully called, tokens_held goes up appropriately *)
@@ -273,7 +285,6 @@ Definition pool_increases_tokens_held (contract : Contract Setup Msg State Error
     let old_bal := get_bal token (stor_tokens_held cstate) in 
     let new_bal := get_bal token (stor_tokens_held cstate') in 
     new_bal = old_bal + qty.
-Context {pool_increases_tokens_held_pf : pool_increases_tokens_held contract}.
 
 
 (* Specification of the UNPOOL entrypoint *)
@@ -293,7 +304,6 @@ Definition unpool_entrypoint_check (contract : Contract Setup Msg State Error) :
     FMap.find msg_payload.(token_unpooled) (stor_rates cstate) = None -> 
     receive contract chain ctx cstate (Some msg) = 
       Err(error_to_Error error_TOKEN_NOT_FOUND).
-Context {unpool_entrypoint_check_pf : unpool_entrypoint_check contract}.
 
 
 Definition unpool_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
@@ -310,7 +320,6 @@ Definition unpool_entrypoint_check_2 (contract : Contract Setup Msg State Error)
     receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
     exists r_x,
     FMap.find msg_payload.(token_unpooled) (stor_rates cstate) = Some r_x.
-Context {unpool_entrypoint_check_2_pf : unpool_entrypoint_check_2 contract}.
 
 
 (* When the UNPOOL entrypoint is successfully called, it emits a BURN call to the 
@@ -340,7 +349,6 @@ Definition unpool_emits_burn (contract : Contract Setup Msg State Error) : Prop 
     burn_data.(FA2Spec.retire_amount) = msg_payload.(qty_unpooled) /\
     (* the burned tokens go from the unpooler *)
     burn_data.(FA2Spec.retiring_party) = ctx.(ctx_from).
-Context {unpool_emits_burn_pf : unpool_emits_burn contract}.
 
 
 (* When the UNPOOL entrypoint is successfully called, it emits a TRANSFER call to the 
@@ -371,7 +379,6 @@ Definition unpool_emits_transfer (contract : Contract Setup Msg State Error) : P
     (* whose quantity is the quantity pooled *)
     let r_x := get_rate msg_payload.(token_unpooled) (stor_rates cstate) in 
     transfer_to.(FA2Spec.amount) = msg_payload.(qty_unpooled) * 1_000_000 / r_x.
-Context {unpool_emits_transfer_pf : unpool_emits_transfer contract}.
 
 
 (* When the UNPOOL entrypoint is successfully called, tokens_held goes down appropriately *)
@@ -392,7 +399,6 @@ Definition unpool_decreases_tokens_held (contract : Contract Setup Msg State Err
     let old_bal := get_bal token (stor_tokens_held cstate) in 
     let new_bal := get_bal token (stor_tokens_held cstate') in 
     new_bal = old_bal - qty.
-Context {unpool_decreases_tokens_held_pf : unpool_decreases_tokens_held contract}.
 
 
 (* If the TRADE entrypoint is called, token_in_trade and token_out_trade must both be 
@@ -412,7 +418,6 @@ Definition trade_entrypoint_check (contract : Contract Setup Msg State Error) : 
     (FMap.find msg_payload.(token_out_trade) (stor_rates cstate) = None)) ->
     receive contract chain ctx cstate (Some msg) = 
       Err(error_to_Error error_TOKEN_NOT_FOUND).
-Context {trade_entrypoint_check_pf : trade_entrypoint_check contract}.
 
 
 Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
@@ -431,7 +436,6 @@ Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) 
     ((FMap.find msg_payload.(token_in_trade) (stor_tokens_held cstate) = Some x) /\
     (FMap.find msg_payload.(token_in_trade) (stor_rates cstate) = Some r_x) /\
     (FMap.find msg_payload.(token_out_trade) (stor_rates cstate) = Some r_y)).
-Context {trade_entrypoint_check_2_pf : trade_entrypoint_check_2 contract}.
 
 
 (* Specification of the TRADE entrypoint *)
@@ -465,7 +469,6 @@ Definition trade_pricing_formula (contract : Contract Setup Msg State Error) : P
     (* the diff delta_x and delta_y are correct *)
     delta_x = q /\
     delta_y = calc_delta_y rate_in rate_out q k x.
-Context {trade_pricing_formula_pf : trade_pricing_formula contract}.
 
 
 Definition trade_update_rates_formula (contract : Contract Setup Msg State Error) : Prop := 
@@ -490,8 +493,10 @@ Definition trade_update_rates_formula (contract : Contract Setup Msg State Error
     let x := get_bal t_x (stor_tokens_held cstate) in 
     (* the new rate of t_x is correct *)
     let r_x' := calc_rate_in rate_in rate_out q k x in 
-    FMap.find t_x (stor_rates cstate') = Some r_x'.
-Context {trade_update_rates_formula_pf : trade_update_rates_formula contract}.
+    FMap.find t_x (stor_rates cstate') = Some r_x' /\ 
+    (forall t, t <> t_x -> 
+        FMap.find t (stor_rates cstate') = 
+        FMap.find t (stor_rates cstate)).
 
 
 (* When TRADE is successfully called, it emits a TRANSFER action of t_x in quantity q *)
@@ -521,7 +526,6 @@ Definition trade_emits_transfer_tx (contract : Contract Setup Msg State Error) :
     (* whose quantity is the quantity traded, transferred to the contract *)
     transfer_to.(FA2Spec.amount) = msg_payload.(qty_trade) /\
     transfer_to.(FA2Spec.to_) = ctx.(ctx_contract_address).
-Context {trade_emits_transfer_tx_pf : trade_emits_transfer_tx contract}.
 
 
 (* transfers with delta_y given by calculate_trade function *)
@@ -559,17 +563,66 @@ Definition trade_emits_transfer_ty (contract : Contract Setup Msg State Error) :
     let q := msg_payload.(qty_trade) in 
     transfer_to.(FA2Spec.amount) = calc_delta_y rate_in rate_out q k x  /\
     transfer_to.(FA2Spec.to_) = ctx.(ctx_from).
-Context {trade_emits_transfer_ty_pf : trade_emits_transfer_ty contract}.
 
-(*Definition is_structured_pool 
-    `{Msg_Spec Msg}  `{Setup_Spec Setup}  `{State_Spec State} `{Error_Spec Error}
+
+(* Initialization specification *)
+(* TODO HOW IS THE CONTRACT INITIALIZED *)
+Definition initialized_with_nonzero_rates (contract : Contract Setup Msg State Error) : Prop := 
+    forall chain bstate ctx setup cstate,
+    (* bstate is reachable *)
+    reachable bstate -> 
+    (* we call init successfully *)
+    init contract chain ctx setup = Ok cstate -> 
+    (* then all rates are nonzero *)
+    forall t r,
+    FMap.find t (stor_rates cstate) = Some r -> 
+    r > 0.
+
+(* we amalgamate each proposition in the specification into a single proposition *)
+Definition is_structured_pool
     (C : Contract Setup Msg State Error) : Prop := 
     pool_entrypoint_check C /\
+    pool_entrypoint_check_2 C /\
     pool_emits_transfer C /\
-    .  TODO *)
+    pool_emits_mint C /\
+    pool_atomic C /\
+    pool_increases_tokens_held C /\
+    unpool_entrypoint_check C /\
+    unpool_entrypoint_check_2 C /\
+    unpool_emits_burn C /\
+    unpool_emits_transfer C /\
+    unpool_decreases_tokens_held C /\
+    trade_entrypoint_check C /\
+    trade_entrypoint_check_2 C /\
+    trade_pricing_formula C /\
+    trade_update_rates_formula C /\
+    trade_emits_transfer_tx C /\
+    trade_emits_transfer_ty C /\
+    initialized_with_nonzero_rates C.
 
-
-
+(* A tactic to destruct is_sp if it's in the context of a proof *)
+Tactic Notation "is_sp_destruct" := 
+match goal with 
+    | is_sp : is_structured_pool _ |- _ => 
+        unfold is_structured_pool in is_sp;
+        destruct is_sp  as [pool_entrypoint_check_pf is_sp'];
+        destruct is_sp' as [pool_entrypoint_check_2_pf is_sp'];
+        destruct is_sp' as [pool_emits_transfer_pf is_sp'];
+        destruct is_sp' as [pool_emits_mint_pf is_sp'];
+        destruct is_sp' as [pool_atomic_pf is_sp'];
+        destruct is_sp' as [pool_increases_tokens_held_pf is_sp'];
+        destruct is_sp' as [unpool_entrypoint_check_pf is_sp'];
+        destruct is_sp' as [unpool_entrypoint_check_2_pf is_sp'];
+        destruct is_sp' as [unpool_emits_burn_pf is_sp'];
+        destruct is_sp' as [unpool_emits_transfer_pf is_sp'];
+        destruct is_sp' as [unpool_decreases_tokens_held_pf is_sp'];
+        destruct is_sp' as [trade_entrypoint_check_pf is_sp'];
+        destruct is_sp' as [trade_entrypoint_check_2_pf is_sp'];
+        destruct is_sp' as [trade_pricing_formula_pf is_sp'];
+        destruct is_sp' as [trade_update_rates_formula_pf is_sp'];
+        destruct is_sp' as [trade_emits_transfer_tx_pf is_sp'];
+        destruct is_sp' as [trade_emits_transfer_ty_pf initialized_with_nonzero_rates_pf]
+end.
 
 
 (* =============================================================================
@@ -578,6 +631,9 @@ Context {trade_emits_transfer_ty_pf : trade_emits_transfer_ty contract}.
       given here, showing that a contract which satisfies the specification also satisfies
       the properties here.
  * ============================================================================= *)
+
+ Context {contract : Contract Setup Msg State Error}
+ { is_sp : is_structured_pool contract }.
 
 
 (* Demand Sensitivity :
@@ -601,6 +657,7 @@ Theorem demand_sensitivity :
     env_contracts bstate caddr = Some (contract : WeakContract) -> 
     contract_state bstate caddr = Some cstate -> 
     (* r_x is the rate of token t_x *)
+    0 < r_x ->
     (FMap.find t_x (stor_rates cstate)) = Some r_x -> 
     (* a trade of t_x for some t_y happens *)
     forall chain ctx msg msg_payload acts cstate',
@@ -617,48 +674,74 @@ Theorem demand_sensitivity :
     get_rate t (stor_rates cstate') = get_rate t (stor_rates cstate).
 Proof.
     intros. 
+    is_sp_destruct.
     pose proof (trade_entrypoint_check_2_pf bstate caddr cstate chain ctx msg msg_payload
-            cstate' acts H7 H8 H9 H12 H11).
-    do 4 destruct H15. destruct H16.
-    rewrite H12 in H11.
-    rewrite <- H13 in H10.
+            cstate' acts H7 H8 H9 H13 H12).
+    do 4 destruct H16. destruct H17.
     (* get the new rates *)  
-    Admitted. (*
-    (* open up the receive function *)
-    cbn in H11.
-    (* the trade function checks succeed *)
-    destruct 
-        (FMap.find (token_in_trade msg_payload) (tokens_held cstate)),
-        (FMap.find (token_in_trade msg_payload) (rates cstate)),
-        (FMap.find (token_out_trade msg_payload) (rates cstate)) in H7; 
-    cbn in H7; inversion H7. 
-    destruct (RPMM.get_bal (token_out_trade msg_payload) (tokens_held cstate) <?
-           calc_delta_y e n0 (qty_trade msg_payload) (outstanding_tokens cstate) n)%N in H7;
-    cbn in H7; inversion H7.
-    clear H7 H17. 
-    inversion H11. rewrite H14 in H16. clear H11.
-    inversion H6.  rewrite H11 in H16. clear H6.
-    inversion H12. clear H12.
+    pose proof (trade_update_rates_formula_pf bstate caddr cstate chain ctx msg msg_payload t_x (msg_payload.(token_out_trade)) (msg_payload.(qty_trade)) cstate' acts H7 H8 H9 H13 (eq_sym H14) (reflexivity (token_out_trade msg_payload)) H15 (reflexivity (qty_trade msg_payload)) H12). 
+    destruct H19.
+    (*  *)
     split.
-    -   unfold r_x', get_rate.
-        rewrite <- H16. clear H16.
-        rewrite <- H9.
-        rename n0 into r_y.
-        cbn.
-        rewrite (FMap.find_add 
-            (token_in_trade msg_payload) 
-            (calc_rate_in r_x r_y (qty_trade msg_payload) (outstanding_tokens cstate) x) 
-            (rates cstate)).
-        (* the rest is algebra *)
-        apply rate_decrease.
-    -   intros. 
-        unfold get_rate.
-        cbn.
-        rewrite <- H9 in H6. apply not_eq_sym in H6.
-        pose proof (FMap.find_add_ne (token_in_trade msg_payload) t (calc_rate_in r_x n0 (qty_trade msg_payload) (outstanding_tokens cstate) x) (rates cstate) H6).
-        rewrite H12.
-        reflexivity.
+    -   unfold r_x'. unfold get_rate.
+        replace (FMap.find t_x (stor_rates cstate')) 
+        with (Some
+            (calc_rate_in 
+                (get_rate t_x (stor_rates cstate))
+                (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                (qty_trade msg_payload)
+                (stor_outstanding_tokens cstate) 
+                (get_bal t_x (stor_tokens_held cstate)))).
+        assert (r_x = (get_rate t_x (stor_rates cstate))).
+        +   unfold get_rate. 
+            replace (FMap.find t_x (stor_rates cstate)) 
+            with (Some r_x).
+            reflexivity.
+        +   rewrite H21.
+            exact (rate_decrease 
+                (get_rate t_x (stor_rates cstate)) 
+                (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                (qty_trade msg_payload)
+                (stor_outstanding_tokens cstate) 
+                (get_bal t_x (stor_tokens_held cstate))).
+    -   intros. unfold get_rate.
+        replace (FMap.find t (stor_rates cstate')) with (FMap.find t (stor_rates cstate));
+        try exact (eq_sym (H20 t H21)).
+        auto.
 Qed.
+
+
+(* Nonpathological prices 
+    As relative prices shift over time, a price that starts out nonzero never goes to 
+    zero or to a negative value. 
+
+    This is to avoid pathological behavior of zero or negative prices. 
+
+    Note, however, that prices can still get arbitrarily close to zero, like in the case 
+    of CPMMs.
+*) (*
+Theorem nonpathological_prices : 
+    forall bstate caddr cstate n,
+    (* the state is reachable *)
+    reachable bstate -> 
+    (* get the address *)
+    env_contracts bstate caddr = Some (contract : WeakContract) -> 
+    contract_state bstate caddr = Some cstate -> 
+    (* the statement *)
+    forall t,
+    (* token in the ledger => rate neq zero *)
+    FMap.find t (stor_rates cstate) = Some n /\ n > 0 -> 
+    (* any state reachable through cstate has the same property *)
+    forall bstate' cstate',
+    reachable_through bstate bstate' -> 
+    contract_state bstate' caddr = Some cstate' ->
+    (* the token still has an exchange rate greater than zero in the new state cstate' *)
+    exists n', 
+    FMap.find t (stor_rates cstate) = Some n' /\ n' > 0.
+Proof.
+    intros.
+    (* contract induction over the trace *)
+
 *)
 
 (* Functional non-depletion :
@@ -686,12 +769,12 @@ Theorem functional_non_depletion :
         msg = trade msg_payload ->
     (* there is liquidity *)
     (stor_outstanding_tokens cstate') > 0.
-Proof.
+Proof. (* 
     intros.
     pose proof (trade_entrypoint_check_2_pf bstate caddr cstate chain ctx msg msg_payload
             cstate' acts H7 H8 H9 H12 H11).
     do 4 destruct H13. destruct H14.
-    rewrite H12 in H11.
+    rewrite H12 in H11. *)
     (* open up the receive function 
     cbn in H7.
     destruct 
@@ -784,31 +867,6 @@ Theorem arbitrage_sensitivity :
     FMap.find t_x (stor_rates cstate') = Some(external_price) \/
     FMap.find t_x (stor_tokens_held cstate') = None.
 Proof. Admitted.
-
-
-(* Nontrivial prices 
-    As relative prices shift over time, a price that starts out nonzero never goes to 
-    zero or to a negative value. 
-
-    This is to avoid pathological behavior of zero or negative prices. 
-
-    Note, however, that prices can still get arbitrarily close to zero, like in the case 
-    of CPMMs.
-*)
-Theorem nontrivial_prices : 
-    forall bstate caddr,
-    (* the state is reachable *)
-    reachable bstate -> 
-    (* get the address *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    exists cstate n, 
-    (* get the contract state (storage) *)
-    contract_state bstate caddr = Some cstate /\ 
-    forall (token : token), 
-    (* token in the ledger => rate neq zero *)
-    FMap.find token (stor_rates cstate) = Some n -> n > 0.
-Proof. Admitted.
-
 
 
 (* Pooled consistency 
