@@ -1,6 +1,6 @@
--Q concert/execution/theories ConCert.Execution
--Q concert/execution/test ConCert.Execution.Test
--Q concert/utils/theories ConCert.Utils
+-Q phd-thesis-ConCert/execution/theories ConCert.Execution
+-Q phd-thesis-ConCert/execution/test ConCert.Execution.Test
+-Q phd-thesis-ConCert/utils/theories ConCert.Utils
 
 -Q specifications/StructuredPoolsSpec PhD.Specifications.StructuredPoolsSpec
 specifications/StructuredPoolsSpec/StructuredPoolsSpec.v
