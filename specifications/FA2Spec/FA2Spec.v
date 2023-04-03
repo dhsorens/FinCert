@@ -93,6 +93,10 @@ Section Storage.
       countable.inj_countable' (fun o => (o.(token_address), o.(token_id)))
                               (fun '(a, b) => Build_token a b)
                               ltac:(reflexivity).
+    
+    Declare Scope token_scope.
+    Notation "x =? y" := (if token_eq_dec x y then true else false)
+          (at level 70) : token_scope.
   End STDPPInstances.
   (* end hide *)
 End Storage.
