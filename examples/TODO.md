@@ -1,0 +1,20 @@
+TODOs:
+- [ ] backwards compatible:
+    - [ ] documentation
+- [ ] bug fix:
+    - [ ] documentation
+- [ ] optimizing:
+    - [ ] finish theorems 
+    - [ ] documentation
+- [ ] specify upgrade:
+    - [ ] create a concrete example and implement it to show rounding error of a calculation as part of a specification
+- [ ] transport Hoare:
+    - [ ] subtle issue to resolve of the pullback 
+    - [ ] may need lifting 
+- [ ] upgradeable:
+    - [ ] the injection 
+    - [ ] the surjection
+    - [ ] more rigorous capture of the "splitting"
+- [ ] interface:
+    - [ ] a better definition of the direct sum
+    - [ ] the weak equivalence
