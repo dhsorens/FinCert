@@ -19,7 +19,6 @@ Import ListNotations.
 Open Scope N_scope.
 Open Scope string.
 
-(* TODO : the point of this is to formally define what it means to be backwards compatible *)
 
 Section BackwardsCompatible.
 Context { Base : ChainBase }.
@@ -107,6 +106,46 @@ Qed.
 (* construct the morphism *)
 Definition f : ContractMorphism C C' := 
     simple_cm msg_morph setup_morph state_morph error_morph init_coherence recv_coherence.
+
+
+(* this theorem shows a strong notion of backwards compatibility because there is an embedding of the old contract into the new *)
+Theorem embedding : is_inj_cm f. 
+Proof.
+    unfold is_inj_cm; unfold is_inj. 
+    repeat split; intros.
+    -   destruct a as [(c,ctx) s]. destruct a' as [(c',ctx') s'].
+        cbn in H. unfold setup_morph in H. cbn in H.
+        exact H.
+    -   destruct a, a'; cbn in H.
+        +   unfold state_morph in H. auto.   
+        +   unfold state_morph, error_morph in H. cbn in H. inversion H.
+        +   unfold error_morph, state_morph in H. cbn in H. inversion H.
+        +   unfold error_morph in H. cbn in H. auto.
+    -   destruct a as [((c,ctx),st) o].
+        destruct a' as [((c',ctx'),st') o'].
+        cbn in H. unfold state_morph, msg_morph in H. simpl in H.
+        destruct o, o'; cbn in H.
+        +   destruct e, e0. cbn in H.
+            destruct u, u0. 
+            inversion H.
+            f_equal.
+        +   inversion H.   
+        +   inversion H.
+        +   inversion H. 
+            f_equal.
+    -   destruct a, a'.
+        +   destruct t, t0.
+            cbn in H. unfold state_morph in H. simpl in H. 
+            exact H.
+        +   destruct t.
+            cbn in H. unfold state_morph, error_morph in H. simpl in H.
+            inversion H.
+        +   destruct t.
+            cbn in H. unfold error_morph, state_morph in H.
+            inversion H.   
+        +   cbn in H. unfold error_morph in H. simpl in H.
+            exact H.
+Qed.
 
 End BackwardsCompatible.
 
