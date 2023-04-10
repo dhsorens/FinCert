@@ -20,15 +20,11 @@ Open Scope N_scope.
 Open Scope string.
 
 
-(* TODO STANDALONE DESCRIPTION 
-   - the point: a bug fix is specified/verified *)
-
-
 (** A buggy contract *)
 Section BuggyContract.
-    Context { Base : ChainBase }.
-    Set Primitive Projections.
-    Set Nonrecursive Elimination Schemes.
+Context { Base : ChainBase }.
+Set Primitive Projections.
+Set Nonrecursive Elimination Schemes.
 
 (* contract types definition *)
 Inductive entrypoint := 
