@@ -1,19 +1,20 @@
 TODOs:
-- [ ] backwards compatible:
-    - [ ] documentation
-- [ ] bug fix:
-    - [ ] documentation
+- [x] backwards compatible:
+    - [x] prove injectivity
+    - [x] documentation
+- [x] bug fix:
+    - [x] documentation
 - [ ] optimizing:
-    - [ ] finish theorems 
-    - [ ] documentation
+    - [x] finish theorems 
+    - [x] documentation
 - [ ] specify upgrade:
     - [ ] create a concrete example and implement it to show rounding error of a calculation as part of a specification
 - [ ] transport Hoare:
-    - [ ] subtle issue to resolve of the pullback 
-    - [ ] may need lifting 
+    - [x] subtle issue to resolve of the pullback 
+    - [ ] needs lifting 
 - [ ] upgradeable:
-    - [ ] the injection 
-    - [ ] the surjection
+    - [x] the injection 
+    - [x] the surjection
     - [ ] more rigorous capture of the "splitting"
 - [ ] interface:
     - [ ] a better definition of the direct sum
