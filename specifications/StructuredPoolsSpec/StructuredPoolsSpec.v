@@ -817,6 +817,24 @@ Axiom trade_upper_bound_2 : forall r_x r_y delta_x k x,
     let delta_y := calc_delta_y r_x r_y delta_x k x in 
     r_x * delta_y < r_y * delta_x.
 
+(* TODO add in > 0 for each of these (fix arb proof); distill the right assumption to make
+    about the xy = k curve *)
+Lemma arbitrage_lemma_lt :
+    forall rate_x rate_y ext k x,
+    ext < rate_x -> 
+    exists delta_x,
+    calc_rate_in rate_x rate_y delta_x k x <= ext.
+Admitted.
+
+Lemma arbitrage_lemma_gt : 
+    forall rate_x rate_y ext k x,
+    ext > rate_x -> 
+    exists delta_x,
+    calc_rate_in rate_x rate_y delta_x k x >= ext.
+Admitted.
+
+
+
 (* Demand Sensitivity :
     A trade for a given token increases its price relative to other constituent tokens, 
     so that higher relative demand corresponds to a higher relative price. 
@@ -1184,38 +1202,6 @@ Proof.
     -   solve_facts.
 Qed.
 
-(* from paper: just need to show that r_x' < r_x always, since TRADE is the only
-    entrypoint that changes r_x *)
-Theorem nonpathological_prices_old : 
-    (* For a token t_x in T and rate r_x, *)
-    forall t_x r_x,
-    (* such that in the contract state cstate the rate of t_x is r_x and r_x > 0, *)
-    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 -> 
-    (* in any future reachable state bstate' with contract state cstate', *)
-    forall bstate' (cstate' : State) r_x',
-    reachable_through bstate bstate' -> 
-    contract_state bstate' caddr = Some cstate' ->
-    (* t_x still has an exchange rate greater than zero in the new state cstate' *)
-    FMap.find t_x (stor_rates cstate') = Some r_x' /\ r_x' > 0.
-Proof.
-    contract_induction.
-    (* Please reestablish the invariant after addition of a block *)
-    -   intros. exact IH.
-    (* Please establish the invariant after deployment of the contract *)
-    -   intros.
-        admit.
-    (* Please reestablish the invariant after an outgoing action *)
-    -   intros. exact IH.
-    (* Please reestablish the invariant after a nonrecursive call *)
-    -   intros. exact IH.
-    (* Please reestablish the invariant after a recursive call *)
-    -   intros. exact IH.
-    (* Please reestablish the invariant after permutation of the action queue *)
-    -   intros. exact IH.
-    (* Please prove your facts *)
-    -   intros. solve_facts.
-Admitted.
-
 
 (* Swap rate consistency : 
     For tokens tau_x, tau_y and tau_z, the exchange rate from tau_x to tau_y, and then to 
@@ -1461,39 +1447,113 @@ Qed.
     In our case, this happens because prices adapt through trades due to demand 
     sensitivity or the pool depletes in that particular token.
 *)
-Theorem arbitrage_sensitivity : 
+Theorem arbitrage_sensitivity :
     forall t_x r_x x,
     (* t_x is a token with nonzero pooled liquidity *)
-    FMap.find t_x (stor_rates cstate) = Some r_x /\ 
-    r_x > 0 /\ 
-    FMap.find t_x (stor_tokens_held cstate) = Some x 
-    /\ x > 0 ->
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 /\ 
+    FMap.find t_x (stor_tokens_held cstate) = Some x /\ x > 0 ->
     (* we consider some external price *)    
     forall external_price,
-    exists trade_qty, 
     (* and a trade of trade_qty succeeds *)
     forall chain ctx msg msg_payload cstate' acts,
     receive contract chain ctx cstate msg = Ok(cstate', acts) ->
     msg = Some(trade msg_payload) ->
-    msg_payload.(qty_trade) = trade_qty ->
+    t_x = (token_in_trade msg_payload) ->
     (* the arbitrage opportunity is resolved *)
     let r_x' := get_rate t_x (stor_rates cstate') in
     (* first the case that the external price was lower *)
-    (external_price < r_x -> r_x' >= external_price) /\
+    (external_price < r_x -> 
+        exists trade_qty,
+        msg_payload.(qty_trade) = trade_qty ->
+        external_price >= r_x') /\
     (* second the case that the external price is higher *)
-    (external_price > r_x -> r_x' <= external_price \/
+    (external_price > r_x -> 
+    exists trade_qty,
+        msg_payload.(qty_trade) = trade_qty ->
+        external_price <= r_x' \/
      FMap.find t_x (stor_tokens_held cstate') = None).
 Proof.
-    intros * liquidity *.
-    (* construct the trade quantity *)
-    assert N as trade_qty. admit.
-    exists trade_qty.
-    intros * successful_trade msg_is_trade qty_traded_is_trade_qty.
+    intros * liquidity * successful_trade msg_is_trade tx_trade_in.
     (* show that the trade has equalized arbitrage *)
     split.
-    -   intro ext_leq_rx. admit.
-    -   intro ext_gt_rx. admit.   
-Admitted.
+    (* the external market prices lower than the contract *)
+    -   is_sp_destruct.
+        intro ext_lt_rx.
+        (* the strategy is to buy low (externally), sell high (internally) *)
+        pose proof arbitrage_lemma_lt r_x (get_rate (token_out_trade msg_payload) (stor_rates cstate)) external_price (stor_outstanding_tokens cstate) (get_bal t_x 
+            (stor_tokens_held cstate)) ext_lt_rx
+        as arb_lemma_lt.
+        destruct arb_lemma_lt as [trade_qty new_rate_lt].
+        exists trade_qty.
+        (* use the spec to get r_x' *)
+        intro traded_qty.
+        rewrite msg_is_trade in successful_trade.
+        pose proof trade_update_rates_formula_pf cstate chain ctx msg_payload cstate' acts
+            successful_trade as new_rate_calc.
+        destruct new_rate_calc as [_ rates].
+        destruct rates as [new_rx _].
+        unfold get_rate.
+        rewrite tx_trade_in.
+        replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate'))
+        with (Some
+        (calc_rate_in (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+           (get_rate (token_out_trade msg_payload) (stor_rates cstate)) (qty_trade msg_payload)
+           (stor_outstanding_tokens cstate) (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)))).
+        assert (r_x = (get_rate (token_in_trade msg_payload) (stor_rates cstate)))
+        as rx_got_rate.
+        {   unfold get_rate.
+            destruct liquidity as [rx_l _].
+            rewrite tx_trade_in in rx_l.
+            replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+            with (Some r_x).
+            reflexivity. }
+        rewrite rx_got_rate in new_rate_lt.
+        rewrite <- traded_qty in new_rate_lt.
+        rewrite tx_trade_in in new_rate_lt.
+        apply (N.le_ge (calc_rate_in (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+        (get_rate (token_out_trade msg_payload) (stor_rates cstate)) (qty_trade msg_payload)
+        (stor_outstanding_tokens cstate) (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate))) external_price) in new_rate_lt.
+        exact new_rate_lt.
+    (* the external market prices higher than the contract *)
+    -   is_sp_destruct.
+        intro ext_gt_rx.
+        (* the strategy is to buy low (internally), sell high (externally) *)
+        pose proof arbitrage_lemma_gt r_x (get_rate (token_out_trade msg_payload) (stor_rates cstate)) external_price (stor_outstanding_tokens cstate) (get_bal t_x 
+            (stor_tokens_held cstate)) ext_gt_rx
+        as arb_lemma_gt.
+        destruct arb_lemma_gt as [trade_qty new_rate_gt].
+        exists trade_qty.
+        (* use the spec to get r_x' *)
+        intro traded_qty.
+        rewrite msg_is_trade in successful_trade.
+        pose proof trade_update_rates_formula_pf cstate chain ctx msg_payload cstate' acts
+            successful_trade as new_rate_calc.
+        destruct new_rate_calc as [_ rates].
+        destruct rates as [new_rx _].
+        unfold get_rate.
+        rewrite tx_trade_in.
+        replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate'))
+        with (Some
+        (calc_rate_in (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+           (get_rate (token_out_trade msg_payload) (stor_rates cstate)) (qty_trade msg_payload)
+           (stor_outstanding_tokens cstate) (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)))).
+        assert (r_x = (get_rate (token_in_trade msg_payload) (stor_rates cstate)))
+        as rx_got_rate.
+        {   unfold get_rate.
+            destruct liquidity as [rx_l _].
+            rewrite tx_trade_in in rx_l.
+            replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+            with (Some r_x).
+            reflexivity. }
+        rewrite rx_got_rate in new_rate_gt.
+        rewrite <- traded_qty in new_rate_gt.
+        rewrite tx_trade_in in new_rate_gt.
+        apply (N.ge_le (calc_rate_in (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+        (get_rate (token_out_trade msg_payload) (stor_rates cstate)) (qty_trade msg_payload)
+        (stor_outstanding_tokens cstate) (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate))) external_price) in new_rate_gt.
+        left.
+        exact new_rate_gt.
+Qed.
 
 
 (* Pooled consistency 
