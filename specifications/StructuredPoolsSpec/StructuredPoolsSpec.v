@@ -10,6 +10,7 @@ From ConCert.Execution Require Import ResultMonad.
 From ConCert.Execution Require Import Serializable.
 From ConCert.Utils Require Import RecordUpdate.
 From ConCert.Utils Require Import Extras.
+From Coq Require Import FunctionalExtensionality.
 From Coq Require Import Ensembles.
 From Coq Require Import ZArith_base.
 From Coq Require Import QArith_base.
@@ -17,6 +18,7 @@ From Coq Require Import String.
 From Coq Require Import List.
 From Coq Require Import Fin.
 From Coq.Init Require Import Byte.
+From Coq Require Import Lia.
 
 Import ListNotations.
 Open Scope N_scope.
@@ -50,6 +52,13 @@ Definition error : Type := N.
 Definition token : Type := FA2Spec.token. (* token_address and token_id fields *)
 Definition exchange_rate := N. (* always divided by 1_000_000n in the code  *)
 
+Definition token_eq_dec (t1 t2 : token) : { t1 = t2 } + { t1 <> t2 }.
+Proof.
+    decide equality.
+    - apply N.eq_dec.
+    - apply address_eqdec.
+Defined.
+
 Definition transfer_to := FA2Spec.transfer_to.
 Definition transfer_data := FA2Spec.transfer_data.
 
@@ -74,9 +83,9 @@ Record trade_data := {
 
 Inductive entrypoint := 
 (* pooling and trading *)
-| Pool : pool_data -> entrypoint 
-| Unpool : unpool_data -> entrypoint 
-| Trade : trade_data -> entrypoint.
+| pool : pool_data -> entrypoint 
+| unpool : unpool_data -> entrypoint 
+| trade : trade_data -> entrypoint.
 
 Definition calc_delta_y (rate_in : N) (rate_out : N) (qty_trade : N) (k : N) (x : N) : N := 
     (* calculate ell *)
@@ -109,20 +118,24 @@ Context {Base : ChainBase}
       proven true of a given contract.
  * ============================================================================= *)
 
-    { Setup Msg State Error : Type }
-    `{Serializable Msg}  `{Serializable Setup}  `{Serializable State} `{Serializable Error}.
+    { Setup State Error : Type }
+    `{Serializable Setup}  `{Serializable State} `{Serializable Error}.
+
+Definition Msg : Type := entrypoint.
+Context `{Serializable Msg}.
+
 
 (* Specification of the Msg type:
   - A Pool entrypoint, whose interface is defined by the pool_data type
   - An Unpool entrypoint, whose interface is defined by the unpool_data type
   - A Trade entrypoint, whose interface is defined by the trade_data type
-*)
+
 Class Msg_Spec (T : Type) := 
   build_msg_spec {
     pool : pool_data -> T ;
     unpool : unpool_data -> T ;
     trade : trade_data -> T ;
-}.
+}.*)
 
 (* specification of the State type:
   - keeps track of:
@@ -158,6 +171,14 @@ Class Error_Spec (T : Type) :=
 
 (* we assume that our contract types satisfy the type specifications *)
 Context `{Msg_Spec Msg}  `{Setup_Spec Setup}  `{State_Spec State} `{Error_Spec Error}.
+
+(* First, we assume that all successful calls require a message *)
+Definition none_fails (contract : Contract Setup Msg State Error) : Prop :=
+    forall cstate chain ctx,
+    (* the receive function returns an error if the token to be pooled is not in the 
+       rates map held in the storage (=> is not in the semi-fungible family) *)
+    exists err : Error, 
+    receive contract chain ctx cstate None = Err err.
 
 (* Specification of the POOL entrypoint *)
 (* When the POOL entrypoint is called, the contract call fails if 
@@ -270,22 +291,34 @@ Definition pool_atomic (contract : Contract Setup Msg State Error) : Prop :=
 
 (* When the POOL entrypoint is successfully called, tokens_held goes up appropriately *)
 Definition pool_increases_tokens_held (contract : Contract Setup Msg State Error) : Prop := 
-    forall bstate caddr cstate chain ctx msg msg_payload qty token cstate' acts,
-    (* reachable bstate *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
+    forall cstate chain ctx msg_payload cstate' acts,
     (* the call to POOL was successful *)
-    msg = pool msg_payload -> 
-    qty = msg_payload.(qty_pooled) -> 
-    token = msg_payload.(token_pooled) ->
-    receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
+    receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
     (* in cstate', tokens_held has increased at token *)
+    let token := msg_payload.(token_pooled) in
+    let qty := msg_payload.(qty_pooled) in
     let old_bal := get_bal token (stor_tokens_held cstate) in 
     let new_bal := get_bal token (stor_tokens_held cstate') in 
     new_bal = old_bal + qty.
 
+
+Definition pool_rates_unchanged (contract : Contract Setup Msg State Error) : Prop := 
+    forall cstate cstate' chain ctx msg_payload acts,
+    (* the call to POOL was successful *)
+    receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
+    (* rates all stay the same *)
+    forall t,
+    FMap.find t (stor_rates cstate) = FMap.find t (stor_rates cstate').
+
+Definition pool_outstanding (contract : Contract Setup Msg State Error) : Prop := 
+    forall cstate cstate' chain ctx msg_payload acts,
+    (* the call to POOL was successful *)
+    receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
+    (* rates all stay the same *)
+    let rate_in := get_rate msg_payload.(token_pooled) (stor_rates cstate) in 
+    let qty := msg_payload.(qty_pooled) in 
+    stor_outstanding_tokens cstate' = 
+    stor_outstanding_tokens cstate + rate_in / 1000000 * qty.
 
 (* Specification of the UNPOOL entrypoint *)
 (* When the UNPOOL entrypoint is called, the contract call fails if 
@@ -383,23 +416,34 @@ Definition unpool_emits_transfer (contract : Contract Setup Msg State Error) : P
 
 (* When the UNPOOL entrypoint is successfully called, tokens_held goes down appropriately *)
 Definition unpool_decreases_tokens_held (contract : Contract Setup Msg State Error) : Prop := 
-    forall bstate caddr cstate chain ctx msg msg_payload qty token cstate' acts,
-    (* reachable bstate *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* the call to UNPOOL was successful *)
-    msg = unpool msg_payload -> 
-    qty = msg_payload.(qty_unpooled) -> 
-    token = msg_payload.(token_unpooled) ->
-    receive contract chain ctx cstate (Some msg) = 
-      Ok(cstate', acts) -> 
+    forall cstate chain ctx msg_payload cstate' acts,
+    (* the call to POOL was successful *)
+    receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
     (* in cstate', tokens_held has increased at token *)
+    let token := msg_payload.(token_unpooled) in
+    let qty := msg_payload.(qty_unpooled) in
     let old_bal := get_bal token (stor_tokens_held cstate) in 
     let new_bal := get_bal token (stor_tokens_held cstate') in 
     new_bal = old_bal - qty.
 
+(* When the UNPOOL entrypoint is successfully called, tokens_held goes down appropriately *)
+Definition unpool_rates_unchanged (contract : Contract Setup Msg State Error) : Prop := 
+    forall cstate cstate' chain ctx msg_payload acts,
+    (* the call to POOL was successful *)
+    receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
+    (* rates all stay the same *)
+    forall t,
+    FMap.find t (stor_rates cstate) = FMap.find t (stor_rates cstate').
+
+Definition unpool_outstanding (contract : Contract Setup Msg State Error) : Prop := 
+    forall cstate cstate' chain ctx msg_payload acts,
+    (* the call to POOL was successful *)
+    receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
+    (* rates all stay the same *)
+    let rate_in := get_rate msg_payload.(token_unpooled) (stor_rates cstate) in 
+    let qty := msg_payload.(qty_unpooled) in 
+    stor_outstanding_tokens cstate' = 
+    stor_outstanding_tokens cstate - 1000000 / rate_in * qty.
 
 (* If the TRADE entrypoint is called, token_in_trade and token_out_trade must both be 
     part of the semi-fungible family for the trade to succeed. *)
@@ -421,17 +465,10 @@ Definition trade_entrypoint_check (contract : Contract Setup Msg State Error) : 
 
 
 Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
-    forall bstate caddr cstate chain ctx msg msg_payload cstate' acts,
-    (* reachable bstate *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* forall calls to the Pool entrypoint *)
-    msg = trade (msg_payload) -> 
+    forall cstate chain ctx msg_payload cstate' acts,
     (* the receive function returns an error if the token to be pooled is not in the 
        rates map held in the storage (=> is not in the semi-fungible family) *)
-    receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
+    receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
     exists x r_x r_y,
     ((FMap.find msg_payload.(token_in_trade) (stor_tokens_held cstate) = Some x) /\
     (FMap.find msg_payload.(token_in_trade) (stor_rates cstate) = Some r_x) /\
@@ -472,23 +509,17 @@ Definition trade_pricing_formula (contract : Contract Setup Msg State Error) : P
 
 
 Definition trade_update_rates_formula (contract : Contract Setup Msg State Error) : Prop := 
-    forall bstate caddr cstate chain ctx msg msg_payload t_x t_y q cstate' acts,
-    (* reachable bstate *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
+    forall cstate chain ctx msg_payload cstate' acts,
     (* the TRADE entrypoint was called succesfully *)
-    msg = trade msg_payload -> 
-    t_x = msg_payload.(token_in_trade) -> 
-    t_y = msg_payload.(token_out_trade) -> 
-    t_x <> t_y -> 
-    q = msg_payload.(qty_trade) ->
-    receive contract chain ctx cstate (Some msg) = 
+    receive contract chain ctx cstate (Some (trade msg_payload)) = 
       Ok(cstate', acts) -> 
+    let t_x := msg_payload.(token_in_trade) in
+    let t_y := msg_payload.(token_out_trade) in
+    t_x <> t_y /\
     (* calculate the diffs delta_x and delta_y *)
     let rate_in := (get_rate t_x (stor_rates cstate)) in 
     let rate_out := (get_rate t_y (stor_rates cstate)) in 
+    let q := msg_payload.(qty_trade) in
     let k := (stor_outstanding_tokens cstate) in 
     let x := get_bal t_x (stor_tokens_held cstate) in 
     (* the new rate of t_x is correct *)
@@ -565,15 +596,9 @@ Definition trade_emits_transfer_ty (contract : Contract Setup Msg State Error) :
     transfer_to.(FA2Spec.to_) = ctx.(ctx_from).
 
 Definition trade_tokens_held_update (contract : Contract Setup Msg State Error) : Prop :=
-    forall bstate caddr cstate chain ctx msg msg_payload cstate' acts,
-    (* reachable bstate *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
+    forall cstate chain ctx msg_payload cstate' acts,
     (* the call to TRADE was successful *)
-    msg = trade (msg_payload) -> 
-    receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
+    receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
     (* in the new state *)
     let t_x := msg_payload.(token_in_trade) in 
     let t_y := msg_payload.(token_out_trade) in 
@@ -581,10 +606,33 @@ Definition trade_tokens_held_update (contract : Contract Setup Msg State Error) 
     let rate_out := (get_rate t_y (stor_rates cstate)) in 
     let k := (stor_outstanding_tokens cstate) in 
     let x := get_bal t_x (stor_tokens_held cstate) in 
-    let q := msg_payload.(qty_trade) in 
-    let delta_y := calc_delta_y rate_in rate_out q k x in 
-    let prev_bal := get_bal t_y (stor_tokens_held cstate) in 
-    get_bal t_y (stor_tokens_held cstate') = (prev_bal - delta_y).
+    let delta_x := msg_payload.(qty_trade) in 
+    let delta_y := calc_delta_y rate_in rate_out delta_x k x in 
+    let prev_bal_y := get_bal t_y (stor_tokens_held cstate) in 
+    let prev_bal_x := get_bal t_x (stor_tokens_held cstate) in 
+    get_bal t_y (stor_tokens_held cstate') = (prev_bal_y - delta_y) /\
+    get_bal t_x (stor_tokens_held cstate') = (prev_bal_x + delta_x) /\
+    forall t_z, 
+        t_z <> t_x -> 
+        t_z <> t_y -> 
+        get_bal t_z (stor_tokens_held cstate') = 
+        get_bal t_z (stor_tokens_held cstate).
+
+Definition trade_outstanding_update (contract : Contract Setup Msg State Error) : Prop :=
+    forall cstate chain ctx msg_payload cstate' acts,
+    (* the call to TRADE was successful *)
+    receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
+    (* in the new state *)
+    let t_x := msg_payload.(token_in_trade) in 
+    let t_y := msg_payload.(token_out_trade) in 
+    let rate_in := (get_rate t_x (stor_rates cstate)) in 
+    let rate_out := (get_rate t_y (stor_rates cstate)) in 
+    let k := (stor_outstanding_tokens cstate) in 
+    let x := get_bal t_x (stor_tokens_held cstate) in 
+    let delta_x := msg_payload.(qty_trade) in 
+    let delta_y := calc_delta_y rate_in rate_out delta_x k x in 
+    (stor_outstanding_tokens cstate') = 
+    (stor_outstanding_tokens cstate) + delta_x - delta_y.
 
 Definition trade_in_deposit (contract : Contract Setup Msg State Error) : Prop :=
     forall bstate caddr cstate chain ctx msg msg_payload cstate' acts,
@@ -623,11 +671,8 @@ Definition stor_outstanding_tokens (contract : Contract Setup Msg State Error) :
 *)
 
 (* Initialization specification *)
-(* TODO HOW IS THE CONTRACT INITIALIZED *)
 Definition initialized_with_nonzero_rates (contract : Contract Setup Msg State Error) : Prop := 
-    forall chain bstate ctx setup cstate,
-    (* bstate is reachable *)
-    reachable bstate -> 
+    forall chain ctx setup cstate,
     (* we call init successfully *)
     init contract chain ctx setup = Ok cstate -> 
     (* then all rates are nonzero *)
@@ -635,20 +680,40 @@ Definition initialized_with_nonzero_rates (contract : Contract Setup Msg State E
     FMap.find t (stor_rates cstate) = Some r -> 
     r > 0.
 
+Definition initialized_with_zero_balance (contract : Contract Setup Msg State Error) : Prop := 
+    forall chain ctx setup cstate,
+    (* we call init successfully *)
+    init contract chain ctx setup = Ok cstate -> 
+    (* then all rates are nonzero *)
+    forall t,
+    get_bal t (stor_tokens_held cstate) = 0.
+
+Definition initialized_with_zero_outstanding (contract : Contract Setup Msg State Error) : Prop := 
+    forall chain ctx setup cstate,
+    (* we call init successfully *)
+    init contract chain ctx setup = Ok cstate -> 
+    (* then all rates are nonzero *)
+    stor_outstanding_tokens cstate = 0.
+
 (* we amalgamate each proposition in the specification into a single proposition *)
 Definition is_structured_pool
     (C : Contract Setup Msg State Error) : Prop := 
+    none_fails C /\
     pool_entrypoint_check C /\
     pool_entrypoint_check_2 C /\
     pool_emits_transfer C /\
     pool_emits_mint C /\
     pool_atomic C /\
     pool_increases_tokens_held C /\
+    pool_rates_unchanged C /\
+    pool_outstanding C /\
     unpool_entrypoint_check C /\
     unpool_entrypoint_check_2 C /\
     unpool_emits_burn C /\
     unpool_emits_transfer C /\
     unpool_decreases_tokens_held C /\
+    unpool_rates_unchanged C /\
+    unpool_outstanding C /\
     trade_entrypoint_check C /\
     trade_entrypoint_check_2 C /\
     trade_pricing_formula C /\
@@ -656,25 +721,33 @@ Definition is_structured_pool
     trade_emits_transfer_tx C /\
     trade_emits_transfer_ty C /\
     trade_tokens_held_update C /\
+    trade_outstanding_update C /\
     trade_in_deposit C /\
-    initialized_with_nonzero_rates C.
+    initialized_with_nonzero_rates C /\
+    initialized_with_zero_balance C /\
+    initialized_with_zero_outstanding C.
 
 (* A tactic to destruct is_sp if it's in the context of a proof *)
 Tactic Notation "is_sp_destruct" := 
     match goal with 
     | is_sp : is_structured_pool _ |- _ => 
         unfold is_structured_pool in is_sp;
-        destruct is_sp  as [pool_entrypoint_check_pf is_sp'];
+        destruct is_sp  as [none_fails_pf is_sp'];
+        destruct is_sp'  as [pool_entrypoint_check_pf is_sp'];
         destruct is_sp' as [pool_entrypoint_check_2_pf is_sp'];
         destruct is_sp' as [pool_emits_transfer_pf is_sp'];
         destruct is_sp' as [pool_emits_mint_pf is_sp'];
         destruct is_sp' as [pool_atomic_pf is_sp'];
         destruct is_sp' as [pool_increases_tokens_held_pf is_sp'];
+        destruct is_sp' as [pool_rates_unchanged_pf is_sp'];
+        destruct is_sp' as [pool_outstanding_pf is_sp'];
         destruct is_sp' as [unpool_entrypoint_check_pf is_sp'];
         destruct is_sp' as [unpool_entrypoint_check_2_pf is_sp'];
         destruct is_sp' as [unpool_emits_burn_pf is_sp'];
         destruct is_sp' as [unpool_emits_transfer_pf is_sp'];
         destruct is_sp' as [unpool_decreases_tokens_held_pf is_sp'];
+        destruct is_sp' as [unpool_rates_unchanged_pf is_sp'];
+        destruct is_sp' as [unpool_outstanding_pf is_sp'];
         destruct is_sp' as [trade_entrypoint_check_pf is_sp'];
         destruct is_sp' as [trade_entrypoint_check_2_pf is_sp'];
         destruct is_sp' as [trade_pricing_formula_pf is_sp'];
@@ -682,7 +755,10 @@ Tactic Notation "is_sp_destruct" :=
         destruct is_sp' as [trade_emits_transfer_tx_pf is_sp'];
         destruct is_sp' as [trade_emits_transfer_ty_pf is_sp'];
         destruct is_sp' as [trade_tokens_held_update_pf is_sp']; 
-        destruct is_sp' as [trade_in_deposit_pf initialized_with_nonzero_rates_pf]
+        destruct is_sp' as [trade_outstanding_update_pf is_sp'];
+        destruct is_sp' as [trade_in_deposit_pf is_sp'];
+        destruct is_sp' as [initialized_with_nonzero_rates_pf is_sp']; 
+        destruct is_sp' as [initialized_with_zero_balance_pf initialized_with_zero_outstanding_pf]
 end.
 
 
@@ -693,17 +769,45 @@ end.
       the properties here.
  * ============================================================================= *)
 
- Context {contract : Contract Setup Msg State Error}
-        { is_sp : is_structured_pool contract }.
+Context {contract : Contract Setup Msg State Error}
+        { is_sp : is_structured_pool contract }
+        (* some common assumptions in the metaspecification *)
+        { bstate : ChainState } { caddr : Address } { cstate : State }
+        (* reachable state *)
+        { reachable_st : reachable bstate } { trace : ChainTrace empty_state bstate}
+        (* with contract at caddr *)
+        { contract_at_caddr : env_contracts bstate caddr = Some (contract : WeakContract) }
+        (* with contract state cstate *)
+        { state_is_cstate : contract_state bstate caddr = Some cstate }.
 
-(* Some assumptions *)
+(* Some assumptions (should probably prove some of these) *)
+(* update_rate function returns positive number  *)
+Axiom update_rate_returns_positive : forall r_x r_y delta_x k x, 
+    let r_x' := calc_rate_in r_x r_y delta_x k x in
+    let delta_y := calc_delta_y r_x r_y delta_x k x in  
+    (r_x * x / 1_000_000 + r_y * delta_y / 1_000_000) > 0 -> 
+    (x + delta_x) > 0 -> 
+    r_x' > 0.
+
+Axiom update_rate_stays_positive : forall r_x r_y delta_x k x, 
+    let r_x' := calc_rate_in r_x r_y delta_x k x in
+    r_x > 0 ->
+    r_x' > 0.
+
+(* calculate_trade function returns a positive number if k, r_x, r_y, delta_x > 0 *)
+Axiom calc_trade_returns_positive : forall r_x r_y delta_x k x, 
+    k > 0 -> 
+    r_x > 0 -> 
+    r_y > 0 -> 
+    delta_x > 0 -> 
+    calc_delta_y r_x r_y delta_x k x > 0.
+
 (* r_x' < r_x *)
-(* TODO derive from Dexter2 Spec for (x * y = k) results *)
 Axiom rate_decrease : forall r_x r_y delta_x k x, 
-    calc_rate_in r_x r_y delta_x k x < r_x.
+    let r_x' := calc_rate_in r_x r_y delta_x k x in 
+    r_x' < r_x.
 
 (* delta_y < ( r_y / r_x ) * delta_x *)
-(* TODO derive from Dexter2 Spec for (x * y = k) results *)
 Axiom trade_upper_bound : forall r_x r_y delta_x k x, 
     let delta_y := calc_delta_y r_x r_y delta_x k x in 
     delta_y < ( r_y / r_x ) * delta_x.
@@ -723,67 +827,162 @@ Axiom trade_upper_bound_2 : forall r_x r_y delta_x k x,
     We prove that r_x' > r_x and forall t_z, r_z' = r_z.
 *)
 
-Theorem demand_sensitivity :
-    forall bstate caddr cstate t_x r_x,
-    (* state is reachable *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* r_x is the rate of token t_x *)
-    0 < r_x ->
-    (FMap.find t_x (stor_rates cstate)) = Some r_x -> 
-    (* a trade of t_x for some t_y happens *)
-    forall chain ctx msg msg_payload acts cstate',
-        receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) ->
-        msg = trade msg_payload ->
-        msg_payload.(token_in_trade) = t_x ->
-        t_x <> msg_payload.(token_out_trade) ->
-    (* new cstate induced by *)
-    let r_x' := get_rate t_x (stor_rates cstate') in 
-    (* r_x' goes down while all other rates stay constant *)
-    r_x' < r_x /\
-    forall t,
-    t <> t_x ->
-    get_rate t (stor_rates cstate') = get_rate t (stor_rates cstate).
+(* x decreases relative to z as x => x', z => z' :
+    z - x < z' - x' *)
+Definition rel_decr (x z x' z' : N) := 
+    ((Z.of_N z) - (Z.of_N x) < (Z.of_N z') - (Z.of_N x'))%Z.
+
+Lemma rel_decr_lem : forall x x' z : N, 
+    x' < x -> 
+    rel_decr x z x' z.
 Proof.
-    intros. 
-    is_sp_destruct.
-    pose proof (trade_entrypoint_check_2_pf bstate caddr cstate chain ctx msg msg_payload
-            cstate' acts H7 H8 H9 H13 H12).
-    do 4 destruct H16. destruct H17.
-    (* get the new rates *)  
-    pose proof (trade_update_rates_formula_pf bstate caddr cstate chain ctx msg msg_payload t_x (msg_payload.(token_out_trade)) (msg_payload.(qty_trade)) cstate' acts H7 H8 H9 H13 (eq_sym H14) (reflexivity (token_out_trade msg_payload)) H15 (reflexivity (qty_trade msg_payload)) H12). 
-    destruct H19.
-    (*  *)
-    split.
-    -   unfold r_x'. unfold get_rate.
-        replace (FMap.find t_x (stor_rates cstate')) 
-        with (Some
-            (calc_rate_in 
-                (get_rate t_x (stor_rates cstate))
-                (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
-                (qty_trade msg_payload)
-                (stor_outstanding_tokens cstate) 
-                (get_bal t_x (stor_tokens_held cstate)))).
-        assert (r_x = (get_rate t_x (stor_rates cstate))).
-        +   unfold get_rate. 
-            replace (FMap.find t_x (stor_rates cstate)) 
-            with (Some r_x).
-            reflexivity.
-        +   rewrite H21.
-            exact (rate_decrease 
-                (get_rate t_x (stor_rates cstate)) 
-                (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
-                (qty_trade msg_payload)
-                (stor_outstanding_tokens cstate) 
-                (get_bal t_x (stor_tokens_held cstate))).
-    -   intros. unfold get_rate.
-        replace (FMap.find t (stor_rates cstate')) with (FMap.find t (stor_rates cstate));
-        try exact (eq_sym (H20 t H21)).
-        auto.
+    intros * x_leq.
+    unfold rel_decr.
+    (* z - x < z - x' <-> -x < -x' *)
+    rewrite <- (Z.add_opp_r (Z.of_N z) (Z.of_N x)).
+    rewrite <- (Z.add_opp_r (Z.of_N z) (Z.of_N x')).
+    rewrite (Z.add_comm (Z.of_N z) (- Z.of_N x)).
+    rewrite (Z.add_comm (Z.of_N z) (- Z.of_N x')).
+    apply (Z.add_lt_mono_r (- Z.of_N x) (- Z.of_N x') (Z.of_N z)).
+    (* <-> x' < x, as desired *)
+    apply (Z.opp_lt_mono (Z.of_N x') (Z.of_N x)).
+    apply (N2Z.inj_lt x' x) in x_leq.
+    exact x_leq.
 Qed.
 
+(* y increases relative to x as y => y', x => x' : 
+    y - x < y' - x' *)
+Definition rel_incr (y x y' x' : N) := 
+    ((Z.of_N y) - (Z.of_N x) < (Z.of_N y') - (Z.of_N x'))%Z.
+
+Lemma rel_incr_lem : forall x x' y : N, 
+    x' < x -> 
+    rel_incr y x y x'.
+Proof.
+    intros * x_leq.
+    unfold rel_incr.
+    (* y - x < y - x' <-> -x < -x' *)
+    rewrite <- (Z.add_opp_r (Z.of_N y) (Z.of_N x)).
+    rewrite <- (Z.add_opp_r (Z.of_N y) (Z.of_N x')).
+    rewrite (Z.add_comm (Z.of_N y) (- Z.of_N x)).
+    rewrite (Z.add_comm (Z.of_N y) (- Z.of_N x')).
+    apply (Z.add_lt_mono_r (- Z.of_N x) (- Z.of_N x') (Z.of_N y)).
+    (* <-> x' < x, as desired *)
+    apply (Z.opp_lt_mono (Z.of_N x') (Z.of_N x)).
+    apply (N2Z.inj_lt x' x) in x_leq.
+    exact x_leq.
+Qed.
+
+Theorem demand_sensitivity :
+    (* For all tokens t_x t_y, rates r_x r_y, and quantities x and y, where *)
+    forall t_x r_x x t_y r_y y,
+    (* t_x is a token with nonzero pooled liquidity and with rate r_x > 0, and *)
+    FMap.find t_x (stor_tokens_held cstate) = Some x /\ x > 0 /\
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 ->
+    (* t_y is a token with nonzero pooled liquidity and with rate r_y > 0 *)
+    FMap.find t_y (stor_tokens_held cstate) = Some y /\ y > 0 /\
+    FMap.find t_y (stor_rates cstate) = Some r_y /\ r_y > 0 ->
+    (* In a trade t_x to t_y ... *)
+    forall chain ctx msg msg_payload acts cstate',
+        (* i.e.: a successful call to the contract *)
+        receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) ->
+        (* which is a trade *)
+        msg = trade msg_payload ->
+        (* from t_x to t_y *)
+        msg_payload.(token_in_trade) = t_x ->
+        msg_payload.(token_out_trade) = t_y ->
+        (* with t_x <> t_y *)
+        t_x <> t_y -> 
+    (* ... as r_x is updated to r_x': ... *)
+    let r_x' := get_rate t_x (stor_rates cstate') in 
+    (* (1) r_x decreases relative to all rates r_z, for t_z <> t_x, and *)
+    (forall t_z, 
+        t_z <> t_x -> 
+        let r_z  := get_rate t_z (stor_rates cstate) in 
+        let r_z' := get_rate t_z (stor_rates cstate') in 
+        rel_decr r_x r_z r_x' r_z') /\
+    (* (2) r_y strictly increases relative to r_x *)
+    let t_y := msg_payload.(token_out_trade) in 
+    let r_y  := get_rate t_y (stor_rates cstate) in 
+    let r_y' := get_rate t_y (stor_rates cstate') in 
+    rel_incr r_y r_x r_y' r_x'.
+Proof.
+    intros ? ? ? ? ? ? t_x_data t_y_data ? ? ? ? ? ? successful_txn msg_is_trade 
+        token_in_tx token_out_ty tx_neq_ty r_x'.
+    destruct t_x_data as [stor_tx t_x_data].
+    destruct t_x_data as [x_geq0 t_x_data].
+    destruct t_x_data as [rate_rx rx_geq_0].
+    (* first, prove that r_x' < r_x while r_z = r_z' for all other rates *)
+    assert (r_x' < r_x /\
+        forall t,
+        t <> t_x ->
+        get_rate t (stor_rates cstate') = get_rate t (stor_rates cstate))
+    as change_lemma.
+    {   intros.
+        is_sp_destruct.
+        rewrite msg_is_trade in successful_txn.
+        pose proof (trade_entrypoint_check_2_pf cstate chain ctx msg_payload
+                cstate' acts successful_txn)
+        as token_in_qty.
+        do 3 destruct token_in_qty as [* token_in_qty].
+        destruct token_in_qty as [token_in_qty rates_exist].
+        destruct rates_exist as [rate_in_exists rate_out_exists].
+        (* get the new rates *)  
+        rewrite <- token_out_ty in tx_neq_ty.
+        rewrite <- msg_is_trade in successful_txn.
+        rewrite msg_is_trade in successful_txn.
+        pose proof (trade_update_rates_formula_pf cstate chain ctx msg_payload cstate' acts successful_txn) as updating_rates. 
+        destruct updating_rates as [_ updating_rates].
+        destruct updating_rates as [calc_new_rate_x other_rates_equal].
+        (* split into cases *)
+        split.
+        -   unfold r_x'. unfold get_rate.
+            rewrite token_in_tx in calc_new_rate_x.
+            replace (FMap.find t_x (stor_rates cstate')) 
+            with (Some
+                (calc_rate_in 
+                    (get_rate t_x (stor_rates cstate))
+                    (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                    (qty_trade msg_payload)
+                    (stor_outstanding_tokens cstate) 
+                    (get_bal t_x (stor_tokens_held cstate)))).
+            assert (r_x = (get_rate t_x (stor_rates cstate))) as r_x_is_r_x.
+            +   unfold get_rate. 
+                replace (FMap.find t_x (stor_rates cstate)) 
+                with (Some r_x).
+                reflexivity.
+            +   rewrite r_x_is_r_x.
+                exact (rate_decrease 
+                    (get_rate t_x (stor_rates cstate)) 
+                    (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                    (qty_trade msg_payload)
+                    (stor_outstanding_tokens cstate) 
+                    (get_bal t_x (stor_tokens_held cstate))).
+        -   intros t t_neq_tx. 
+            unfold get_rate.
+            replace (FMap.find t (stor_rates cstate')) with (FMap.find t (stor_rates cstate)).
+            2:{ rewrite <- token_in_tx in t_neq_tx.
+                exact (eq_sym (other_rates_equal t t_neq_tx)). }
+            auto. }
+    (* now use change_lemma to prove the result *)
+    destruct change_lemma as [rx_change tz_change].
+    split.
+    (* prove: r_x decreases relative to all rates r_z, for t_z <> t_x *)
+    -   intros t_z z_neq_x. 
+        pose proof (tz_change t_z z_neq_x) as tz_change'. 
+        clear tz_change.
+        rewrite tz_change'.
+        apply rel_decr_lem.
+        exact rx_change.
+    (* prove: r_y strictly increases relative to r_x *)
+    -   unfold rel_incr.
+        rewrite <- token_out_ty in tx_neq_ty.
+        pose proof (tz_change (token_out_trade msg_payload) (not_eq_sym tx_neq_ty)) as tz_change'.
+        clear tz_change.
+        rewrite tz_change'.
+        apply rel_incr_lem.
+        exact rx_change.
+Qed.
 
 (* Nonpathological prices 
     As relative prices shift over time, a price that starts out nonzero never goes to 
@@ -794,90 +993,228 @@ Qed.
     Note, however, that prices can still get arbitrarily close to zero, like in the case 
     of CPMMs.
 *)
+
 Theorem nonpathological_prices : 
-    forall bstate caddr cstate n,
-    (* the state is reachable *)
-    reachable bstate -> 
-    (* get the address *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* the statement *)
-    forall t,
-    (* token in the ledger => rate neq zero *)
-    FMap.find t (stor_rates cstate) = Some n /\ n > 0 -> 
-    (* any state reachable through cstate has the same property *)
-    forall bstate' (cstate' : State),
+    exists (cstate : State),
+    contract_state bstate caddr = Some cstate /\
+    (* For a token t_x in T and rate r_x, *)
+    forall t_x r_x,
+    (* such that in the contract state cstate the rate of t_x is r_x and r_x > 0, *)
+    FMap.find t_x (stor_rates cstate) = Some r_x -> r_x > 0.
+Proof.
+    contract_induction; intros.
+    (* Please reestablish the invariant after addition of a block *)
+    -   exact (IH t_x r_x H6).
+    (* Please establish the invariant after deployment of the contract *)
+    -   is_sp_destruct. clear is_sp.
+        pose proof (initialized_with_nonzero_rates_pf chain ctx setup result init_some) as init_rates.
+        exact (init_rates t_x r_x H6).
+    (* Please reestablish the invariant after an outgoing action *)
+    -   exact (IH t_x r_x H6).
+    (* Please reestablish the invariant after a nonrecursive call *)
+    -   destruct msg.
+        (* msg = Some m *)
+        +   destruct m.
+            (* m = pool p : by the specification, pooling does not change exchange rates *)
+            *   is_sp_destruct. clear is_sp.
+                pose proof (pool_rates_unchanged_pf prev_state new_state chain ctx p new_acts receive_some t_x).
+                replace (FMap.find t_x (stor_rates new_state))
+                with (FMap.find t_x (stor_rates prev_state))
+                in H6.
+                exact (IH t_x r_x H6).
+            (* m = unpool p : by the specification, pooling does not change exchange rates *)
+            *   is_sp_destruct. clear is_sp.
+                pose proof (unpool_rates_unchanged_pf prev_state new_state chain ctx u new_acts receive_some t_x).
+                replace (FMap.find t_x (stor_rates new_state))
+                with (FMap.find t_x (stor_rates prev_state))
+                in H6.
+                exact (IH t_x r_x H6).
+            (* m = trade p *)
+            *   is_sp_destruct. clear is_sp.
+                (* We split into cases (token_in_trade t) = t_x and (token_in_trade t) <> t_x *)
+                destruct (token_eq_dec (token_in_trade t) t_x).
+                (* first we treat unequality, which is the simpler case *)
+                2:{ (* first use the spec to prove that the updated r_x is equal to the old r_x *)
+                    pose proof (trade_update_rates_formula_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as rx_update.
+                    simpl in rx_update.
+                    destruct rx_update as [_ rates_update].
+                    simpl in rates_update.
+                    destruct rates_update as [_ tz_update].
+                    pose proof (tz_update t_x (not_eq_sym n)).
+                    replace (FMap.find t_x (stor_rates new_state)) 
+                    with (FMap.find t_x (stor_rates prev_state))
+                    in H6.
+                    (* by induction ... *)
+                    exact (IH t_x r_x H6). }
+                (* now we have (token_in_trade t) = t_x *)
+                (* we need to get r_x from prev_state *)
+                assert (exists prev_rx, FMap.find t_x (stor_rates prev_state) = Some prev_rx)
+                as exists_prevrx.
+                {   pose proof (trade_entrypoint_check_2_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as prev_rate_lem.
+                    do 3 destruct prev_rate_lem as [* prev_rate_lem].
+                    destruct prev_rate_lem as [_ prev_rate_lem].
+                    destruct prev_rate_lem as [in_lem _].
+                    rewrite e in in_lem.
+                    exists x0.
+                    exact in_lem. }
+                destruct exists_prevrx as [prev_rx *].
+                (* by IH prev_rx is positive *)
+                pose proof (IH t_x prev_rx H7) as prev_pos.
+                (* assert that there is some rate r_y of the  *)
+                assert (exists r_y, r_x = calc_rate_in prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
+                as rx_update.
+                {   pose proof (trade_update_rates_formula_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as rx_update.
+                    destruct rx_update as [_ rates_update].
+                    simpl in rates_update.
+                    destruct rates_update as [tx_update _].
+                    rewrite <- e in *.
+                    rewrite H6 in tx_update.
+                    inversion tx_update.
+                    exists (get_rate (token_out_trade t) (stor_rates prev_state)).
+                    f_equal.
+                    unfold get_rate.
+                    replace (FMap.find (token_in_trade t) (stor_rates prev_state))
+                    with (Some prev_rx).
+                    auto. }
+                destruct rx_update as [r_y rx_update].
+                (* we call on the result prev_rx > 0 => r_x > 0 *)
+                pose proof (update_rate_stays_positive prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
+                as pos_new_rate.
+                rewrite <- rx_update in pos_new_rate.
+                cbn in pos_new_rate.
+                exact (pos_new_rate prev_pos).
+        (* msg = None *)
+        +   is_sp_destruct. clear is_sp.
+            pose proof (none_fails_pf prev_state chain ctx) as none_fail.
+            destruct none_fail as [err none_fail].
+            rewrite none_fail in receive_some.
+            inversion receive_some.
+    (* Please reestablish the invariant after a recursive call *)
+    -   destruct msg.
+        (* msg = Some m *)
+        +   destruct m.
+            (* m = pool p : by the specification, pooling does not change exchange rates *)
+            *   is_sp_destruct. clear is_sp.
+                pose proof (pool_rates_unchanged_pf prev_state new_state chain ctx p new_acts receive_some t_x).
+                replace (FMap.find t_x (stor_rates new_state))
+                with (FMap.find t_x (stor_rates prev_state))
+                in H6.
+                exact (IH t_x r_x H6).
+            (* m = unpool p : by the specification, pooling does not change exchange rates *)
+            *   is_sp_destruct. clear is_sp.
+                pose proof (unpool_rates_unchanged_pf prev_state new_state chain ctx u new_acts receive_some t_x).
+                replace (FMap.find t_x (stor_rates new_state))
+                with (FMap.find t_x (stor_rates prev_state))
+                in H6.
+                exact (IH t_x r_x H6).
+            (* m = trade p *)
+            *   is_sp_destruct. clear is_sp.
+                (* We split into cases (token_in_trade t) = t_x and (token_in_trade t) <> t_x *)
+                destruct (token_eq_dec (token_in_trade t) t_x).
+                (* first we treat unequality, which is the simpler case *)
+                2:{ (* first use the spec to prove that the updated r_x is equal to the old r_x *)
+                    pose proof (trade_update_rates_formula_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as rx_update.
+                    simpl in rx_update.
+                    destruct rx_update as [_ rates_update].
+                    simpl in rates_update.
+                    destruct rates_update as [_ tz_update].
+                    pose proof (tz_update t_x (not_eq_sym n)).
+                    replace (FMap.find t_x (stor_rates new_state)) 
+                    with (FMap.find t_x (stor_rates prev_state))
+                    in H6.
+                    (* by induction ... *)
+                    exact (IH t_x r_x H6). }
+                (* now we have (token_in_trade t) = t_x *)
+                (* we need to get r_x from prev_state *)
+                assert (exists prev_rx, FMap.find t_x (stor_rates prev_state) = Some prev_rx)
+                as exists_prevrx.
+                {   pose proof (trade_entrypoint_check_2_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as prev_rate_lem.
+                    do 3 destruct prev_rate_lem as [* prev_rate_lem].
+                    destruct prev_rate_lem as [_ prev_rate_lem].
+                    destruct prev_rate_lem as [in_lem _].
+                    rewrite e in in_lem.
+                    exists x0.
+                    exact in_lem. }
+                destruct exists_prevrx as [prev_rx *].
+                (* by IH prev_rx is positive *)
+                pose proof (IH t_x prev_rx H7) as prev_pos.
+                (* assert that there is some rate r_y of the  *)
+                assert (exists r_y, r_x = calc_rate_in prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
+                as rx_update.
+                {   pose proof (trade_update_rates_formula_pf prev_state chain ctx t 
+                        new_state new_acts receive_some)
+                    as rx_update.
+                    destruct rx_update as [_ rates_update].
+                    simpl in rates_update.
+                    destruct rates_update as [tx_update _].
+                    rewrite <- e in *.
+                    rewrite H6 in tx_update.
+                    inversion tx_update.
+                    exists (get_rate (token_out_trade t) (stor_rates prev_state)).
+                    f_equal.
+                    unfold get_rate.
+                    replace (FMap.find (token_in_trade t) (stor_rates prev_state))
+                    with (Some prev_rx).
+                    auto. }
+                destruct rx_update as [r_y rx_update].
+                (* we call on the result prev_rx > 0 => r_x > 0 *)
+                pose proof (update_rate_stays_positive prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
+                as pos_new_rate.
+                rewrite <- rx_update in pos_new_rate.
+                cbn in pos_new_rate.
+                exact (pos_new_rate prev_pos).
+        (* msg = None *)
+        +   is_sp_destruct. clear is_sp.
+            pose proof (none_fails_pf prev_state chain ctx) as none_fail.
+            destruct none_fail as [err none_fail].
+            rewrite none_fail in receive_some.
+            inversion receive_some.
+    (* Please reestablish the invariant after permutation of the action queue *)
+    -   exact (IH t_x r_x H6).
+    -   solve_facts.
+Qed.
+
+(* from paper: just need to show that r_x' < r_x always, since TRADE is the only
+    entrypoint that changes r_x *)
+Theorem nonpathological_prices_old : 
+    (* For a token t_x in T and rate r_x, *)
+    forall t_x r_x,
+    (* such that in the contract state cstate the rate of t_x is r_x and r_x > 0, *)
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 -> 
+    (* in any future reachable state bstate' with contract state cstate', *)
+    forall bstate' (cstate' : State) r_x',
     reachable_through bstate bstate' -> 
     contract_state bstate' caddr = Some cstate' ->
-    (* the token still has an exchange rate greater than zero in the new state cstate' *)
-    exists n',
-    FMap.find t (stor_rates cstate') = Some n' /\ n' > 0.
+    (* t_x still has an exchange rate greater than zero in the new state cstate' *)
+    FMap.find t_x (stor_rates cstate') = Some r_x' /\ r_x' > 0.
 Proof.
-    intros.
-    (* induct over the trace *)
-    contract_induction; intros.
-        (* reestablish the invariant after addition of a block *)
-    -   destruct IH. exists x. exact H7.
-        (* establish the invariant after deployment of the contract *)
-    -   admit.
-        (* reestablish the invariant after an outgoing action *)
-    -   destruct IH. exists x. exact H7.
-        (* reestablish the invariant after a nonrecursive call *)
-    -   destruct IH. exists x. exact H7.
-        (* reestablish the invariant after a recursive call *)
-    -   destruct IH. exists x. exact H7.
-        (* reestablish the invariant after permutation of the action queue *)
-    -   destruct IH. exists x. exact H7.
-        (* finally, prove the inductive hypothesis *)
-    -   destruct step eqn:DH; auto.
-        (* TODO AddBlockFacts *)
-        +   admit.
-        +   destruct a eqn:HA; auto.
-            *   admit. (* TODO DeployFacts *)
-            *   admit. (* TODO CallFacts *)
+    contract_induction.
+    (* Please reestablish the invariant after addition of a block *)
+    -   intros. exact IH.
+    (* Please establish the invariant after deployment of the contract *)
+    -   intros.
+        admit.
+    (* Please reestablish the invariant after an outgoing action *)
+    -   intros. exact IH.
+    (* Please reestablish the invariant after a nonrecursive call *)
+    -   intros. exact IH.
+    (* Please reestablish the invariant after a recursive call *)
+    -   intros. exact IH.
+    (* Please reestablish the invariant after permutation of the action queue *)
+    -   intros. exact IH.
+    (* Please prove your facts *)
+    -   intros. solve_facts.
 Admitted.
-
-(* Functional non-depletion :
-    No trade can empty the entire pool of tokens. This mimics properties of CPMMs 
-    currently, for which no trade can deplete any constituent token of any pool. The 
-    difference here is that we are willing to let individual, constituent tokens deplete, 
-    but do not allow the entire pool to deplete. 
-
-    This is because tokenized carbon credits can be consumed by being retired as offsets, 
-    so while we don't want the entire class of carbon credits to deplete from the pool by 
-    trading, we should enable individual credits to deplete.
-*)
-Theorem functional_non_depletion :
-    forall bstate caddr cstate,
-    (* state is reachable *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* there is liquidity in some token t *)
-    (exists t q,
-    FMap.find t (stor_tokens_held cstate) = Some q) ->
-    (* a trade occurs *)
-    forall chain ctx msg msg_payload acts cstate',
-        receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) -> 
-        msg = trade msg_payload ->
-    (* there is still liquidity in some token *)
-    exists t' q',
-    FMap.find t' (stor_tokens_held cstate') = Some q'.
-Proof.
-    intros.
-    destruct H10 as [t H10]. destruct H10 as [q has_liquidity].
-    exists (token_in_trade msg_payload), 
-    (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate) 
-    + (qty_trade msg_payload)).
-    is_sp_destruct.
-    pose proof (trade_in_deposit_pf bstate caddr cstate chain ctx msg msg_payload cstate' acts
-    H7 H8 H9 H12 H11).
-    (* TODO 
-    destruct (FA2Spec.token_eq_dec (token_in_trade msg_payload) (token_out_trade msg_payload)). *)
-    exact H10.
-Qed.
-(* destruct (FA2Spec.token_eq_dec t (token_out_trade msg_payload)). *)
 
 
 (* Swap rate consistency : 
@@ -891,64 +1228,230 @@ Qed.
     e.g. tau_x to tau_y, and back to tau_x, which is important so that there are no 
     arbitrage oportunities internal to the pool.
 *)
-Theorem swap_rate_consistency : 
-    forall bstate caddr cstate,
-    (* state is reachable *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* a trade from t_x to t_z *)
-    forall t_x t_z qty_trade
-        chain ctx msg_xz msg_payload_xz acts_xz cstate_xz,
-        receive contract chain ctx cstate (Some msg_xz) = Ok (cstate_xz, acts_xz) ->
-        msg_xz = trade msg_payload_xz -> 
-        msg_payload_xz = Build_trade_data t_x t_z qty_trade ->
-    (* a trade from t_x to t_y *)
-    forall t_y msg_xy msg_payload_xy acts_xy cstate_xy,
-        receive contract chain ctx cstate (Some msg_xy) = Ok (cstate_xy, acts_xy) ->
-        msg_xy = trade msg_payload_xy -> 
-        msg_payload_xy = Build_trade_data t_x t_y qty_trade ->
-    (* which yields delta_y tokens in t_y *)
-    let delta_y := 
-        (get_bal t_y (stor_tokens_held cstate)) - 
-        (get_bal t_y (stor_tokens_held cstate_xy)) in 
-    (* followed by a trade of delta_y from t_y to t_z *)
-    forall msg_yz msg_payload_yz acts_yz cstate_yz chain' ctx',
-        receive contract chain' ctx' cstate_xy (Some msg_yz) = Ok (cstate_yz, acts_yz) ->
-        msg_yz = trade msg_payload_yz -> 
-        msg_payload_yz = Build_trade_data t_y t_z delta_y ->
-    (* the output delta_z *)
-    let delta_z_direct := 
-        (get_bal t_z (stor_tokens_held cstate)) - 
-        (get_bal t_z (stor_tokens_held cstate_xz)) in 
-    let delta_z_indirect := 
-        (get_bal t_z (stor_tokens_held cstate)) - 
-        (get_bal t_z (stor_tokens_held cstate_yz)) in     
-    (* the direct trade yielded more t_z than the indirect trade *)
-    delta_z_direct > delta_z_indirect.
+
+(* first a type to describe successive trades *)
+Record trade_sequence_type := build_trade_sequence_type {
+    seq_chain : ChainState ; 
+    seq_ctx : ContractCallContext ; 
+    seq_cstate : State ; 
+    seq_trade_data : trade_data ;
+    seq_res_acts : list ActionBody ;
+}.
+
+(* a proposition that indicates a list of trades are successive, successful trades *)
+Fixpoint are_successive_trades (trade_sequence : list trade_sequence_type) : Prop := 
+    match trade_sequence with 
+    | [] => True
+    | [ t ] =>
+        (* if the list has one element, it just has to succeed *)
+        exists cstate' acts,
+        receive contract 
+            (seq_chain t)
+            (seq_ctx t)
+            (seq_cstate t) 
+            (Some (trade (seq_trade_data t))) 
+        = Ok(cstate', acts)
+    | t1 :: t2 :: l => 
+        (* the trade t1 goes through, connecting t1 and t2 *)
+        receive contract 
+            (seq_chain t1) 
+            (seq_ctx t1) 
+            (seq_cstate t1) 
+            (Some (trade (seq_trade_data t1))) 
+        = Ok(seq_cstate t2, seq_res_acts t2) /\ 
+        (are_successive_trades l)
+    end.
+
+(* a function to calculate the the trade output of the final trade, delta_x' *)
+Definition calc_final_delta (t : trade_sequence_type) := 
+    let cstate := seq_cstate t in 
+    let token_in := token_in_trade (seq_trade_data t) in 
+    let token_out := token_out_trade (seq_trade_data t) in 
+    let rate_in := get_rate token_in (stor_rates cstate) in 
+    let rate_out := get_rate token_out (stor_rates cstate) in 
+    let delta_x := qty_trade (seq_trade_data t) in 
+    let k := stor_outstanding_tokens cstate in 
+    let x := get_bal token_in (stor_tokens_held cstate) in 
+    (* the calculation *)
+    calc_delta_y rate_in rate_out delta_x k x.
+
+Definition swap_rate_lemma : 
+    forall t_x r_x x t_y r_y y, 
+    (* t_x is a token with nonzero pooled liquidity and with rate r_x > 0, and *)
+    FMap.find t_x (stor_tokens_held cstate) = Some x /\ x > 0 /\
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 ->
+    (* t_y is a token with nonzero pooled liquidity and with rate r_y > 0 *)
+    FMap.find t_y (stor_tokens_held cstate) = Some y /\ y > 0 /\
+    FMap.find t_y (stor_rates cstate) = Some r_y /\ r_y > 0 ->
+    (* In a trade t_x to t_y ... *)
+    forall chain ctx msg msg_payload acts cstate',
+        (* i.e.: a successful call to the contract *)
+        receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) ->
+        (* which is a trade *)
+        msg = trade msg_payload ->
+        (* from t_x to t_y *)
+        msg_payload.(token_in_trade) = t_x ->
+        msg_payload.(token_out_trade) = t_y ->
+        (* with t_x <> t_y *)
+        t_x <> t_y -> 
+    (* ... as r_x is updated to r_x': ... *)
+    let delta_x := msg_payload.(qty_trade) in 
+    let delta_y := calc_delta_y r_x r_y delta_x (stor_outstanding_tokens cstate) x in 
+    let r_x' := get_rate t_x (stor_rates cstate') in 
+    r_y * delta_y <= r_x' * delta_x.
 Proof.
-    intros. unfold delta_z_direct. unfold delta_z_indirect.
-        (* TODO *)
-        assert (forall n m m', m < m' -> n - m > n - m'). admit. apply H19.
-    (* destruct the specification *)
-    is_sp_destruct.
-    pose proof (trade_tokens_held_update_pf bstate caddr cstate chain ctx (msg_xy) msg_payload_xy cstate_xy acts_xy H7 H8 H9 H14 H13).
-        (* TODO *)
-        assert (contract_state bstate caddr = Some cstate_xy). admit.
-    pose proof (trade_tokens_held_update_pf bstate caddr cstate_xy chain' ctx' (msg_yz) msg_payload_yz cstate_yz acts_yz H7 H8 H21 H17 H16).
-    pose proof (trade_tokens_held_update_pf bstate caddr cstate chain ctx (msg_xz) msg_payload_xz cstate_xz acts_xz H7 H8 H9 H11 H10).
-    (* rewrite the x -> z trade *)
-    assert (token_out_trade msg_payload_xz = t_z). rewrite H12. auto.
-    rewrite H24 in H23. clear H24.
-    rewrite H23. clear H23.
-    (* rewrite the y -> z trade *)
-    assert (token_out_trade msg_payload_yz = t_z). rewrite H18. auto.
-    rewrite H23 in H22. clear H23.
-    rewrite H22. clear H22.
-    (* rewrite the x -> y trade *)
-    (* TODO : would be better to formalize in a loop *)
+    intros * lqty_x lqty_y * trade_success msg_is_trade from_tx to_ty tx_neq_ty *.
+    is_sp_destruct. clear is_sp.
+    rewrite msg_is_trade in trade_success.
+    pose proof (trade_update_rates_formula_pf cstate chain ctx msg_payload cstate' acts
+        trade_success)
+    as rx_update.
+    simpl in rx_update.
+    destruct rx_update as [_ rates_update].
+    simpl in rates_update.
+    destruct rates_update as [tx_update tz_update].
+    assert (r_x' = calc_rate_in r_x r_y (qty_trade msg_payload) (stor_outstanding_tokens cstate) x) as r_x'_calc.
+    { admit. }
+    rewrite r_x'_calc.
+    unfold calc_rate_in.
+    assert (forall x1 x2 y z : N, z <= x1 / y * x2 <-> z * y <= x1 * x2) as div_alg. 
+    { admit. }
+    rewrite (div_alg 
+        (r_x * x / 1000000 + r_y * calc_delta_y r_x r_y (qty_trade msg_payload) (stor_outstanding_tokens cstate) x / 1000000)
+        delta_x
+        (x + qty_trade msg_payload)
+        (r_y * delta_y)).
 Admitted.
+
+
+Theorem swap_rate_consistency : 
+    (* Let t_x be a token with nonzero pooled liquidity and rate r_x > 0 *)
+    forall t_x r_x x,
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 /\ 
+    FMap.find t_x (stor_tokens_held cstate) = Some x /\ x > 0 ->
+    (* then for any delta_x > 0 and any sequence of trades, beginning and ending with t_x *)
+    forall delta_x (trade_sequence : list trade_sequence_type) t_fst t_last,
+    delta_x > 0 -> 
+    (* trade_sequence is a list of successive trades *)
+    are_successive_trades trade_sequence -> 
+    (* with a first and last trade, t_fst and t_last respectively, *)
+    (hd_error trade_sequence) = Some t_fst ->
+    (hd_error (rev trade_sequence)) = Some t_last ->
+    (* starting from our current bstate and cstate *)
+    seq_chain t_fst = bstate ->
+    seq_cstate t_fst = cstate ->
+    (* the first trade is from t_x *)
+    token_in_trade (seq_trade_data t_fst) = t_x ->
+    (* the last trade is to t_x *)
+    token_out_trade (seq_trade_data t_last) = t_x -> 
+    (* delta_x', the output of the last trade, is never larger than delta_x. *)
+    let delta_x' := calc_final_delta t_last in 
+    delta_x' <= delta_x.
+Proof.
+    (* from paper: 
+        - first prove ry dy \leq rx' dx as a lemma.
+        - then consider sequences of trades of length:
+            - 1: tx -> tx 
+            - 2: tx -> ty -> tx 
+            - 3: tx -> ty -> tz -> tx
+        - it always follows from the lemma.
+    *)
+    intros * H_lr * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx to_tx *.
+    (* induct on the length of the sequence of trades, trade_sequence *)
+    set (length trade_sequence) as num_trades.
+    induction num_trades eqn:NumTrades.
+    (* there can't be zero trades, proof by contradiction *)
+    -   pose proof (length_zero_iff_nil trade_sequence) as nil_list.
+        apply nil_list in NumTrades.
+        rewrite NumTrades in fst_txn.
+        inversion fst_txn.
+    (* now for the case that there is at least one trade *)
+    -   admit.
+    (* TODO a function that gives this for any n. Define the function recursively. *)
+Admitted.
+
+(* Zero-Impact Liquidity Change :
+    The quoted price of trades is unaffected by calling DEPOSIT and WITHDRAW 
+*)
+Theorem zero_impact_liquidity_change_deposit :
+    (* Consider the quoted price of a trade t_x to t_y at cstate, *)
+    forall t_x t_y r_x r_y,
+    FMap.find t_x (stor_rates cstate) = Some r_x ->
+    FMap.find t_y (stor_rates cstate) = Some r_y ->
+    let quoted_price := r_x / r_y in 
+    (* and a successful DEPOSIT or WITHDRAW action. *)
+    forall chain ctx msg payload_pool payload_unpool acts cstate' r_x' r_y',
+        receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) ->
+        msg = pool payload_pool \/
+        msg = unpool payload_unpool ->
+    (* Then take the (new) quoted price of a trade t_x to t_y at cstate'. *)
+    FMap.find t_x (stor_rates cstate') = Some r_x' ->
+    FMap.find t_y (stor_rates cstate') = Some r_y' ->
+    let quoted_price' := r_x' / r_y' in 
+    (* The quoted price is unchanged. *)
+    quoted_price = quoted_price'.
+Proof.
+    intros * rx_rate ry_rate * successful_txn msg_pool_or_unpool new_rx_rate new_ry_rate *.
+    destruct msg_pool_or_unpool as [msg_pool | msg_unpool].
+    (* the successful transaction was a deposit *)
+    -   is_sp_destruct.
+        assert (FMap.find t_x (stor_rates cstate') = FMap.find t_x (stor_rates cstate)) 
+        as rate_unchanged_x.
+        {   rewrite msg_pool in successful_txn.
+            exact (eq_sym (pool_rates_unchanged_pf cstate cstate' chain ctx payload_pool acts 
+            successful_txn t_x)). }
+        assert (FMap.find t_y (stor_rates cstate') = FMap.find t_y (stor_rates cstate)) 
+        as rate_unchanged_y.
+        {   rewrite msg_pool in successful_txn.
+            exact (eq_sym (pool_rates_unchanged_pf cstate cstate' chain ctx payload_pool acts   
+                successful_txn t_y)). }
+        replace (FMap.find t_x (stor_rates cstate')) 
+        with (FMap.find t_x (stor_rates cstate))
+        in new_rx_rate.
+        replace (FMap.find t_y (stor_rates cstate')) 
+        with (FMap.find t_y (stor_rates cstate))
+        in new_ry_rate.
+        replace (FMap.find t_x (stor_rates cstate)) 
+        with (Some r_x')
+        in rx_rate.
+        replace (FMap.find t_y (stor_rates cstate)) 
+        with (Some r_y')
+        in ry_rate.
+        injection rx_rate as rx_eq.
+        injection ry_rate as ry_eq.
+        unfold quoted_price, quoted_price'.
+        rewrite rx_eq, ry_eq.
+        reflexivity.
+    (* the successful transaction was a withdraw *)
+    -   is_sp_destruct.
+        assert (FMap.find t_x (stor_rates cstate') = FMap.find t_x (stor_rates cstate)) 
+        as rate_unchanged_x.
+        {   rewrite msg_unpool in successful_txn.
+            exact (eq_sym (unpool_rates_unchanged_pf cstate cstate' chain ctx payload_unpool acts 
+            successful_txn t_x)). }
+        assert (FMap.find t_y (stor_rates cstate') = FMap.find t_y (stor_rates cstate)) 
+        as rate_unchanged_y.
+        {   rewrite msg_unpool in successful_txn.
+            exact (eq_sym (unpool_rates_unchanged_pf cstate cstate' chain ctx payload_unpool acts   
+                successful_txn t_y)). }
+        replace (FMap.find t_x (stor_rates cstate')) 
+        with (FMap.find t_x (stor_rates cstate))
+        in new_rx_rate.
+        replace (FMap.find t_y (stor_rates cstate')) 
+        with (FMap.find t_y (stor_rates cstate))
+        in new_ry_rate.
+        replace (FMap.find t_x (stor_rates cstate)) 
+        with (Some r_x')
+        in rx_rate.
+        replace (FMap.find t_y (stor_rates cstate)) 
+        with (Some r_y')
+        in ry_rate.
+        injection rx_rate as rx_eq.
+        injection ry_rate as ry_eq.
+        unfold quoted_price, quoted_price'.
+        rewrite rx_eq, ry_eq.
+        reflexivity.
+Qed.
 
 (* Arbitrage sensitivity :
     If an opportunity for arbitrage exists due to some external market pricing a 
@@ -959,41 +1462,37 @@ Admitted.
     sensitivity or the pool depletes in that particular token.
 *)
 Theorem arbitrage_sensitivity : 
-    forall bstate caddr cstate t_x, 
-    (* state is reachable *)
-    reachable bstate -> 
-    (* the contract address is caddr with state cstate *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    contract_state bstate caddr = Some cstate -> 
-    (* if we consider an executing trade *)
-    forall external_price 
-        chain ctx msg msg_payload cstate' acts,
-        receive contract chain ctx cstate msg = Ok(cstate', acts) -> 
-    msg = Some(trade msg_payload) -> 
-    (* there is some trade quantity that will resolve the arbitrage opportunity *)
-    (* first the case that the external price is lower *)
-    ((external_price < (get_rate t_x (stor_rates cstate'))) ->
-        exists trade_qty, 
-        msg_payload.(qty_trade) = trade_qty ->
-        msg_payload.(token_out_trade) = t_x ->
-        (get_rate t_x (stor_rates cstate') > external_price)) /\ 
+    forall t_x r_x x,
+    (* t_x is a token with nonzero pooled liquidity *)
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ 
+    r_x > 0 /\ 
+    FMap.find t_x (stor_tokens_held cstate) = Some x 
+    /\ x > 0 ->
+    (* we consider some external price *)    
+    forall external_price,
+    exists trade_qty, 
+    (* and a trade of trade_qty succeeds *)
+    forall chain ctx msg msg_payload cstate' acts,
+    receive contract chain ctx cstate msg = Ok(cstate', acts) ->
+    msg = Some(trade msg_payload) ->
+    msg_payload.(qty_trade) = trade_qty ->
+    (* the arbitrage opportunity is resolved *)
+    let r_x' := get_rate t_x (stor_rates cstate') in
+    (* first the case that the external price was lower *)
+    (external_price < r_x -> r_x' >= external_price) /\
     (* second the case that the external price is higher *)
-    ((external_price > (get_rate t_x (stor_rates cstate'))) ->
-        exists trade_qty, 
-        msg_payload.(qty_trade) = trade_qty -> 
-        msg_payload.(token_out_trade) = t_x ->
-        FMap.find t_x (stor_tokens_held cstate') = None).
+    (external_price > r_x -> r_x' <= external_price \/
+     FMap.find t_x (stor_tokens_held cstate') = None).
 Proof.
-    intros.
-    (* split into cases *)
+    intros * liquidity *.
+    (* construct the trade quantity *)
+    assert N as trade_qty. admit.
+    exists trade_qty.
+    intros * successful_trade msg_is_trade qty_traded_is_trade_qty.
+    (* show that the trade has equalized arbitrage *)
     split.
-    -   intro. admit. (* TODO quantify *)
-    -   intro.
-        destruct (FMap.find t_x (stor_tokens_held cstate)) eqn:HA.
-        +   exists n. intros. admit.
-            (* TODO results about no zero entries and INVERT the trade qty function (eugh) *)
-        +   admit.
-            (* TODO a result about how r_x can get as close to zero as needed *)
+    -   intro ext_leq_rx. admit.
+    -   intro ext_gt_rx. admit.   
 Admitted.
 
 
@@ -1027,28 +1526,143 @@ Definition sum_over_tokens
         0.
 
 Theorem pooled_consistency : 
-    forall bstate caddr cstate,
-    (* state is reachable *)
-    reachable bstate -> 
-    (* the contract address is caddr *)
-    env_contracts bstate caddr = Some (contract : WeakContract) -> 
-    (* the contract state is cstate *)
-    contract_state bstate caddr = Some cstate -> 
+    exists (cstate : State),
+    contract_state bstate caddr = Some cstate /\
     (* The sum of all the constituent, pooled tokens, multiplied by their value in terms 
     of pooled tokens, always equals the total number of outstanding pool tokens. *)
     sum_over_tokens (stor_rates cstate) (stor_tokens_held cstate) = 
         (stor_outstanding_tokens cstate).
 Proof.
-    intros.
     contract_induction; intros; try exact IH.
-    (* establish the invariant after deployment of the contract *)
-    -   intros. exact facts.
-    (* the inductive step *)
-    -   destruct step eqn:HS; auto.
-        +   admit. (* AddBlockFacts*)
-        +   destruct a; auto.
-            *   admit. (* DeployFacts *)
-            *   intro. (* CallFacts *)
+    is_sp_destruct. clear is_sp.
+    (* Please establish the invariant after deployment of the contract *)
+    -   (* we use the fact that balances initialize at zero *)
+        pose proof (initialized_with_zero_balance_pf chain ctx setup result init_some)
+        as zero_bal.
+        pose proof (initialized_with_zero_outstanding_pf chain ctx setup result init_some)
+        as zero_outstanding.
+        rewrite zero_outstanding. clear zero_outstanding.
+        unfold sum_over_tokens.
+        unfold fold_fn.
+        assert (forall k, match FMap.find k (stor_tokens_held result) with
+        | Some r => r
+        | None => 0
+        end = 0)
+        as no_tokens_held.
+        {   intro. 
+            unfold get_bal in zero_bal.
+            pose proof (zero_bal k) as e.
+            destruct (FMap.find k (stor_tokens_held result)).
+            exact e. 
+            reflexivity. }
+        assert ((fun (_ : N) (k : token) =>
+        match FMap.find k (stor_rates result) with
+        | Some r => r
+        | None => 0
+        end * match FMap.find k (stor_tokens_held result) with
+              | Some r => r
+              | None => 0
+              end / 1000000) = (fun (_ : N) (k : token) => 0))
+        as fold_fn_0.
+        {   apply functional_extensionality. 
+            intro n.
+            apply functional_extensionality. 
+            intro t.
+            rewrite (no_tokens_held t).
+            rewrite (N.mul_0_r (match FMap.find t (stor_rates result) with
+            | Some r => r
+            | None => 0
+            end)).
+            assert (1000000 <> 0) as neq_n. { auto. }
+            exact (N.div_0_l 1000000 neq_n). }
+        rewrite fold_fn_0.
+        unfold fold_left.
+        induction (FMap.keys (stor_rates result)); auto.
+    (* Please reestablish the invariant after a nonrecursive call *)
+    -   destruct msg.
+        (* msg = Some m *)
+        +   destruct m.
+            (* m = pool *)
+            *   is_sp_destruct. clear is_sp.
+                (* understand how tokens_held has changed *)
+                pose proof (pool_increases_tokens_held_pf prev_state chain ctx p new_state new_acts
+                    receive_some) as bal_update.
+                simpl in bal_update.
+                (* show all rates are the same *)
+                pose proof (pool_rates_unchanged_pf prev_state new_state chain ctx p new_acts
+                    receive_some) as rates_update.
+                (* show how the outstanding tokens update *)
+                pose proof (pool_outstanding_pf prev_state new_state chain ctx p new_acts 
+                    receive_some) as out_update.
+                simpl in out_update.
+                assert (sum_over_tokens (stor_rates new_state) (stor_tokens_held new_state) = 
+                    sum_over_tokens (stor_rates prev_state) (stor_tokens_held new_state))
+                as rates_unchanged.
+                { admit. }
+                rewrite rates_unchanged. clear rates_unchanged.
+                assert (sum_over_tokens (stor_rates prev_state) (stor_tokens_held new_state) = 
+                    sum_over_tokens (stor_rates prev_state) (stor_tokens_held prev_state) + 
+                    get_rate (token_pooled p) (stor_rates prev_state) / 1000000 * qty_pooled p)
+                as separate_sum.
+                { admit. }
+                rewrite separate_sum. clear separate_sum.
+                rewrite out_update.
+                rewrite IH.
+                reflexivity.
+            (* m = unpool *)
+            *   is_sp_destruct. clear is_sp.
+                (* understand how tokens_held has changed *)
+                pose proof (unpool_decreases_tokens_held_pf prev_state chain ctx u new_state new_acts
+                    receive_some) as bal_update.
+                simpl in bal_update.
+                (* show all rates are the same *)
+                pose proof (unpool_rates_unchanged_pf prev_state new_state chain ctx u new_acts
+                    receive_some) as rates_update.
+                (* show how the outstanding tokens update *)
+                pose proof (unpool_outstanding_pf prev_state new_state chain ctx u new_acts 
+                    receive_some) as out_update.
+                simpl in out_update.
+                assert (sum_over_tokens (stor_rates new_state) (stor_tokens_held new_state) = 
+                    sum_over_tokens (stor_rates prev_state) (stor_tokens_held new_state))
+                as rates_unchanged.
+                { admit. }
+                rewrite rates_unchanged. clear rates_unchanged.
+                assert (sum_over_tokens (stor_rates prev_state) (stor_tokens_held new_state) = 
+                    sum_over_tokens (stor_rates prev_state) (stor_tokens_held prev_state) - 
+                    1000000 / get_rate (token_unpooled u) (stor_rates prev_state) * qty_unpooled u)
+                as separate_sum.
+                { admit. }
+                rewrite separate_sum. clear separate_sum.
+                rewrite out_update.
+                rewrite IH.
+                reflexivity.
+            (* m = trade *)
+            *   is_sp_destruct. clear is_sp.
+                (* understand how tokens_held has changed *)
+                pose proof (trade_tokens_held_update_pf prev_state chain ctx t new_state new_acts 
+                    receive_some) as tokens_held_update.
+                destruct tokens_held_update as [tokens_held_update_ty tokens_held_update].
+                destruct tokens_held_update as [tokens_held_update_tx tokens_held_update_tz].
+                (* how calling trade updates rates *)
+                pose proof (trade_update_rates_formula_pf prev_state chain ctx t new_state new_acts
+                    receive_some) as rates_changed_and_unchanged.
+                destruct rates_changed_and_unchanged as [tx_neq_ty rates_changed_and_unchanged].
+                destruct rates_changed_and_unchanged as [rx_change rz_unchanged].
+                (* how outstanding_tokens has changed by calling trade *)
+                pose proof (trade_outstanding_update_pf prev_state chain ctx t new_state new_acts 
+                    receive_some) as out_update.
+                (* LHS equals sum over tokens except for tx and ty, plus r_x' * etc , minus r_y * delta_y *)
+                admit.
+        (* msg = None *)
+        +   is_sp_destruct. clear is_sp.
+            pose proof (none_fails_pf prev_state chain ctx) as failed.
+            destruct failed as [err failed].
+            rewrite receive_some in failed.
+            inversion failed.
+    (* Please reestablish the invariant after a recursive call *)
+    -   admit. (* probably the same proof *)
+    (* solve remaining facts *)
+    -   solve_facts.
 Admitted.
 
 End AbstractSpecification.
