@@ -980,9 +980,8 @@ Proof.
                     (get_bal t_x (stor_tokens_held cstate)))).
             assert (r_x = (get_rate t_x (stor_rates cstate))) as r_x_is_r_x.
             +   unfold get_rate. 
-                replace (FMap.find t_x (stor_rates cstate)) 
+                now replace (FMap.find t_x (stor_rates cstate)) 
                 with (Some r_x).
-                reflexivity.
             +   rewrite r_x_is_r_x.
                 exact (rate_decrease 
                     (get_rate t_x (stor_rates cstate)) 
@@ -1116,9 +1115,8 @@ Proof.
                     exists (get_rate (token_out_trade t) (stor_rates prev_state)).
                     f_equal.
                     unfold get_rate.
-                    replace (FMap.find (token_in_trade t) (stor_rates prev_state))
-                    with (Some prev_rx).
-                    auto. }
+                    now replace (FMap.find (token_in_trade t) (stor_rates prev_state))
+                    with (Some prev_rx). }
                 destruct rx_update as [r_y rx_update].
                 (* we call on the result prev_rx > 0 => r_x > 0 *)
                 pose proof (update_rate_stays_positive prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
@@ -1200,9 +1198,8 @@ Proof.
                     exists (get_rate (token_out_trade t) (stor_rates prev_state)).
                     f_equal.
                     unfold get_rate.
-                    replace (FMap.find (token_in_trade t) (stor_rates prev_state))
-                    with (Some prev_rx).
-                    auto. }
+                    now replace (FMap.find (token_in_trade t) (stor_rates prev_state))
+                    with (Some prev_rx). }
                 destruct rx_update as [r_y rx_update].
                 (* we call on the result prev_rx > 0 => r_x > 0 *)
                 pose proof (update_rate_stays_positive prev_rx r_y (qty_trade t) (stor_outstanding_tokens prev_state) (get_bal t_x (stor_tokens_held prev_state)))
@@ -1290,18 +1287,87 @@ Fixpoint leq_list (l : list N) : Prop :=
         end 
     end.
 
+Fixpoint geq_list (l : list N) : Prop := 
+    match l with 
+    | [] => True 
+    | h :: tl => 
+        match tl with 
+        | [] => True 
+        | h' :: tl' => (h >= h') /\ geq_list tl 
+        end 
+    end.
+
+Lemma geq_transitive : forall l fst lst,
+    hd_error l = Some fst -> 
+    hd_error (rev l) = Some lst -> 
+    geq_list l -> 
+    lst <= fst.
+Proof.
+    intros * hd_fst tl_lst H_geq_list.
+    destruct l as [| a l]; try rewrite hd_error_nil in *; try discriminate.
+    assert (l = [] \/ exists l' b, l = (l' ++ [b])%list) as l_decompose.
+    { admit. }
+    destruct l_decompose as [one_txn | l_decompose].
+    -   rewrite one_txn in *.
+        cbn in hd_fst. injection hd_fst. intro a_fst.
+        cbn in tl_lst. injection tl_lst. intro a_lst.
+        now rewrite <- a_fst, <- a_lst.
+    -   destruct l_decompose as [l' [b l_decompose]].
+        rewrite l_decompose in *. clear l_decompose.
+        cbn in hd_fst. injection hd_fst. intro a_fst.
+        cbn in tl_lst.
+Admitted.
+
 Definition trade_to_ry_delta_y (t : trade_sequence_type) := 
     let delta_y := trade_to_delta_y t in 
     let rate_y := get_rate (token_out_trade (seq_trade_data t)) (stor_rates (seq_cstate t)) in 
     rate_y * delta_y.
 
-Lemma swap_rate_lemma (trade_sequence : list trade_sequence_type) : 
+Lemma geq_list_is_sufficient : forall trade_sequence t_fst t_last, 
+    (hd_error trade_sequence) = Some t_fst ->
+    (hd_error (rev trade_sequence)) = Some t_last ->
+    geq_list (map trade_to_ry_delta_y trade_sequence) ->
+    let delta_x := qty_trade (seq_trade_data t_fst) in 
+    let delta_x' := trade_to_delta_y t_last in 
+    delta_x' <= delta_x.
+Proof.
+    intros * fst_txn lst_txn H_geq_list *.
+    destruct trade_sequence; inversion fst_txn.
+    destruct trade_sequence.
+    (* the case that this is a trade t_x -> t_x *)
+    {   rename H7 into tx_is_fst.
+        assert (t = t_last) as tx_is_last.
+        { cbn in lst_txn. injection lst_txn. auto. }
+        unfold delta_x', delta_x.
+        rewrite <- tx_is_fst, <- tx_is_last.
+        admit. }
+    (* now, the case of t_x -> t_y -> [...] -> t_x *)
+    set (op_t_penultimate := (hd_error (tail (rev trade_sequence)))).
+    assert (exists t_penultimate, Some t_penultimate = op_t_penultimate) as op_t_destruct. admit.
+    destruct op_t_destruct as [t_penultimate pen_txn]. 
+    unfold op_t_penultimate in pen_txn. clear op_t_penultimate.
+    (* r_z delta_z <= r_x' delta_x => delta_x' <= delta_x *)
+Admitted.
+
+Lemma swap_rate_lemma : forall trade_sequence, 
     (* if this is a list of successive trades *)
     are_successive_trades trade_sequence -> 
     (* then  *)
-    leq_list (map trade_to_ry_delta_y trade_sequence).
-Admitted. 
+    geq_list (map trade_to_ry_delta_y trade_sequence).
+Admitted.
 
+Lemma hd_transitive { A B : Type } : forall (l : list A) (f : A -> B) fst, 
+    hd_error l = Some fst -> 
+    hd_error (map f l) = Some (f fst).
+Proof.
+    intros * fst_is_fst.
+    destruct l; try rewrite hd_error_nil in *; try discriminate.
+    cbn in fst_is_fst.
+    cbn.
+    injection fst_is_fst. 
+    intro a_eq_fst.
+    now rewrite a_eq_fst.
+Qed.
 
 Theorem swap_rate_consistency bstate cstate : 
     (* Let t_x be a token with nonzero pooled liquidity and rate r_x > 0 *)
@@ -1321,39 +1387,18 @@ Theorem swap_rate_consistency bstate cstate :
     seq_cstate t_fst = cstate ->
     (* the first trade is from t_x *)
     token_in_trade (seq_trade_data t_fst) = t_x ->
+    qty_trade (seq_trade_data t_fst) = delta_x -> 
     (* the last trade is to t_x *)
     token_out_trade (seq_trade_data t_last) = t_x -> 
     (* delta_x', the output of the last trade, is never larger than delta_x. *)
     let delta_x' := trade_to_delta_y t_last in 
     delta_x' <= delta_x.
 Proof.
-    
-
-    (* from paper: 
-        - first prove ry dy \leq rx' dx as a lemma.
-        - then consider sequences of trades of length:
-            - 1: tx -> tx 
-            - 2: tx -> ty -> tx 
-            - 3: tx -> ty -> tz -> tx
-        - it always follows from the lemma.
-    *)
-    intros * H_lr * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx to_tx *.
-    (* induct on the length of the sequence of trades, trade_sequence *)
-    set (length trade_sequence) as num_trades.
-    induction num_trades eqn:NumTrades.
-    (* there can't be zero trades, proof by contradiction *)
-    -   pose proof (length_zero_iff_nil trade_sequence) as nil_list.
-        apply nil_list in NumTrades.
-        rewrite NumTrades in fst_txn.
-        inversion fst_txn.
-    (* now for the case that there is at least one trade *)
-    -   admit.
-    (* TODO a function that gives this for any n. Define the function recursively. *)
-Admitted.
-
-
-
-
+    intros * H_lr * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx trade_delta_x to_tx *.
+    unfold delta_x'. rewrite <- trade_delta_x.
+    apply (geq_list_is_sufficient trade_sequence t_fst t_last fst_txn lst_txn).
+    now apply swap_rate_lemma.
+Qed.
 
 
 (* Zero-Impact Liquidity Change :
@@ -1406,8 +1451,7 @@ Proof.
         injection rx_rate as rx_eq.
         injection ry_rate as ry_eq.
         unfold quoted_price, quoted_price'.
-        rewrite rx_eq, ry_eq.
-        reflexivity.
+        now rewrite rx_eq, ry_eq.
     (* the successful transaction was a withdraw *)
     -   is_sp_destruct.
         assert (FMap.find t_x (stor_rates cstate') = FMap.find t_x (stor_rates cstate)) 
@@ -1435,8 +1479,7 @@ Proof.
         injection rx_rate as rx_eq.
         injection ry_rate as ry_eq.
         unfold quoted_price, quoted_price'.
-        rewrite rx_eq, ry_eq.
-        reflexivity.
+        now rewrite rx_eq, ry_eq.
 Qed.
 
 (* Arbitrage sensitivity :
@@ -1504,9 +1547,8 @@ Proof.
         {   unfold get_rate.
             destruct liquidity as [rx_l _].
             rewrite tx_trade_in in rx_l.
-            replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-            with (Some r_x).
-            reflexivity. }
+            now replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+            with (Some r_x). }
         rewrite rx_got_rate in new_rate_lt.
         rewrite <- traded_qty in new_rate_lt.
         rewrite tx_trade_in in new_rate_lt.
@@ -1542,9 +1584,8 @@ Proof.
         {   unfold get_rate.
             destruct liquidity as [rx_l _].
             rewrite tx_trade_in in rx_l.
-            replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-            with (Some r_x).
-            reflexivity. }
+            now replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+            with (Some r_x). }
         rewrite rx_got_rate in new_rate_gt.
         rewrite <- traded_qty in new_rate_gt.
         rewrite tx_trade_in in new_rate_gt.
@@ -1582,11 +1623,9 @@ Proof.
     is_sp_destruct.
     (* pool p *)
     pose proof (pool_rates_unchanged_pf prev_state new_state chain ctx p new_acts receive_some) as rates_unchanged.
-        assert ((stor_rates prev_state) = (stor_rates new_state)) as rates_eq.
-        {   apply FMap.ext_eq.
-            auto. }
-        rewrite <- rates_eq.
-    reflexivity.
+    assert ((stor_rates prev_state) = (stor_rates new_state)) as rates_eq.
+    { now apply FMap.ext_eq. }
+    now rewrite <- rates_eq.
 Qed.
 
 Lemma token_keys_invariant_unpool : forall u new_state new_acts prev_state ctx chain,
@@ -1599,11 +1638,9 @@ Proof.
     is_sp_destruct.
     (* unpool u *)
     pose proof (unpool_rates_unchanged_pf prev_state new_state chain ctx u new_acts receive_some) as unrates_unchanged.
-        assert ((stor_rates prev_state) = (stor_rates new_state)) as rates_eq.
-        {   apply FMap.ext_eq.
-            auto. }
-        rewrite <- rates_eq.
-    reflexivity.
+    assert ((stor_rates prev_state) = (stor_rates new_state)) as rates_eq.
+    { now apply FMap.ext_eq. }
+    now rewrite <- rates_eq.
 Qed.
 
 Lemma token_keys_invariant_trade : forall t new_state new_acts prev_state ctx chain,
@@ -1675,8 +1712,8 @@ Proof.
     intros * H_in.
     induction l as [|x l IH]; auto.
     simpl. simpl in H_in. destruct H_in.
-    + left. subst. reflexivity.
-    + right. apply IH. assumption.
+    + left. now subst.
+    + right. now apply IH.
 Qed.
 
 Lemma remove_permute : forall { A : Type } a b (l : list A)
@@ -1687,8 +1724,7 @@ Proof.
     intros * a_neq_b.
     unfold remove.
     apply not_eq_sym in a_neq_b.
-    destruct (eq_dec b a); try contradiction.
-    reflexivity.
+    now destruct (eq_dec b a); try contradiction.
 Qed.
 
 Lemma nodup_permute : forall { A : Type } a (l : list A)
@@ -1745,8 +1781,7 @@ Proof.
     apply not_in_split in not_in. destruct not_in as [not_in_l1 not_in_l2].
     rewrite (notin_remove eq_dec l1 a not_in_l1).
     rewrite remove_cons.
-    rewrite (notin_remove eq_dec l2 a not_in_l2).
-    reflexivity.
+    now rewrite (notin_remove eq_dec l2 a not_in_l2).
 Qed.
 
 Lemma nodup_remove : forall { A : Type } a (l : list A)
@@ -1762,10 +1797,9 @@ Proof.
         rewrite i in nodup_l.
         apply NoDup_remove in nodup_l.
         rewrite nodup_remove_mid.
-        destruct nodup_l.
-        assumption. assumption.
-    -   rewrite (notin_remove eq_dec l a n).
+        now destruct nodup_l.
         assumption.
+    -   now rewrite (notin_remove eq_dec l a n).
 Qed.
 
 Lemma remove_permute_2 : forall { A : Type } a (l1 l2 : list A)
@@ -1795,8 +1829,7 @@ Proof.
         repeat rewrite nodup_remove_mid; try assumption.
         apply (Permutation_app_inv l1' l1'' l2' l2'' a).
         rewrite <- l1_split.
-        rewrite <- l2_split.
-        assumption.
+        now rewrite <- l2_split.
     (* a not in l1 *)
     -   (* prove not in l2 *)
         destruct (in_dec eq_dec a l2) as [in_l2 | not_in_l2].
@@ -1806,9 +1839,7 @@ Proof.
         contradiction.
         (* show equality with remove *)
         rewrite (notin_remove eq_dec l1 a not_in_l1).
-        rewrite (notin_remove eq_dec l2 a not_in_l2).
-        (* by induction *)
-        assumption.
+        now rewrite (notin_remove eq_dec l2 a not_in_l2).
 Qed.
 
 Lemma mapped_eq : forall (A B : Type) (f f' : A -> B) (l : list A),
@@ -1822,8 +1853,7 @@ Proof.
     assert (forall a : A, In a l -> f a = f' a) as H_in_ind.
     {   intros * in_a0.
         exact (H_in a0 (in_cons a a0 l in_a0)). }
-    rewrite (IHl H_in_ind).
-    reflexivity.
+    now rewrite (IHl H_in_ind).
 Qed.
 
 Lemma suml_permute_commutes : forall l l',
@@ -1831,16 +1861,13 @@ Lemma suml_permute_commutes : forall l l',
 Proof.
     intros. induction H6; auto.
     -   repeat rewrite (suml_extract x).
-        rewrite IHPermutation.
-        reflexivity.
+        now rewrite IHPermutation.
     -   rewrite (suml_extract y). rewrite (suml_extract x).
         rewrite (suml_extract x). rewrite (suml_extract y).
         repeat rewrite N.add_assoc.
-        rewrite (N.add_comm x y).
-        reflexivity.
+        now rewrite (N.add_comm x y).
     -   rewrite IHPermutation1.  
-        rewrite IHPermutation2.
-        reflexivity.
+        now rewrite IHPermutation2.
 Qed.
 
 Theorem pooled_consistency bstate caddr :
@@ -1866,8 +1893,7 @@ Proof.
         induction (FMap.keys (stor_rates result)); auto.
         rewrite map_cons.
         rewrite zero_bal.
-        rewrite N.mul_0_r. 
-        auto.
+        now rewrite N.mul_0_r.
     (* Please reestablish the invariant after a nonrecursive call *)
     -   destruct msg.
         (* first, msg = None *)
@@ -1899,8 +1925,8 @@ Proof.
                 rewrite (token_keys_invariant_pool p new_state new_acts prev_state ctx chain receive_some).
                 apply map_ext.
                 intro t.
-                unfold get_rate. rewrite rates_update.
-                auto.  }
+                unfold get_rate. 
+                now rewrite rates_update. }
             rewrite rates_unchanged. clear rates_unchanged.
             (* now separate the sum *)
             assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) = 
@@ -2001,15 +2027,13 @@ Proof.
                         apply t_neq in H_in.
                         apply bals_unchanged in H_in.
                         unfold tokens_to_values_new, tokens_to_values_prev.
-                        rewrite H_in.
-                        reflexivity. }
-                    rewrite (mapped_eq
+                        now rewrite H_in. }
+                    now rewrite (mapped_eq
                         token N
                         tokens_to_values_new
                         tokens_to_values_prev
                         keys_minus_p
-                        tokens_to_vals_eq).
-                    reflexivity. }
+                        tokens_to_vals_eq). }
 
                 (* then to the key that did change *)
                 assert
@@ -2025,12 +2049,10 @@ Proof.
                 rewrite (N.add_comm
                     (get_rate (token_pooled p) (stor_rates prev_state) / 1000000 * qty_pooled p)
                     (suml (map tokens_to_values_prev keys_minus_p))).
-                rewrite N.add_assoc.
-                reflexivity. }
+                now rewrite N.add_assoc. }
             rewrite separate_sum. clear separate_sum.
             rewrite out_update.
-            rewrite IH.
-            reflexivity.
+            now rewrite IH.
         (* m = unpool *)
         +   is_sp_destruct.
             (* understand how tokens_held has changed *)
@@ -2053,8 +2075,8 @@ Proof.
                 rewrite (token_keys_invariant_unpool u new_state new_acts prev_state ctx chain receive_some).
                 apply map_ext.
                 intro t.
-                unfold get_rate. rewrite rates_update.
-                auto.  }
+                unfold get_rate. 
+                now rewrite rates_update. }
             rewrite rates_unchanged. clear rates_unchanged.
             (* now separate the sum *)
             assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) = 
@@ -2155,15 +2177,13 @@ Proof.
                         apply t_neq in H_in.
                         apply bals_unchanged in H_in.
                         unfold tokens_to_values_new, tokens_to_values_prev.
-                        rewrite H_in.
-                        reflexivity. }
-                    rewrite (mapped_eq
+                        now rewrite H_in. }
+                    now rewrite (mapped_eq
                         token N
                         tokens_to_values_new
                         tokens_to_values_prev
                         keys_minus_u
-                        tokens_to_vals_eq).
-                    reflexivity. }
+                        tokens_to_vals_eq). }
                 rewrite old_keys_eq. clear old_keys_eq.
 
                 (* then to the key that did change *)
@@ -2182,15 +2202,13 @@ Proof.
                 as unpooled_leq. {
                     unfold tokens_to_values_prev.
                     exact (unpool_entrypoint_check_3_pf prev_state new_state chain ctx u new_acts receive_some). }
-                rewrite (N.add_sub_swap 
+                now rewrite (N.add_sub_swap 
                     (tokens_to_values_prev (token_unpooled u))
                     (suml (map tokens_to_values_prev keys_minus_u))
                     (qty_unpooled u)
-                    unpooled_leq).
-                reflexivity. }
+                    unpooled_leq). }
             rewrite separate_sum. clear separate_sum.
-            rewrite IH.
-            reflexivity.
+            now rewrite IH.
         (* m = trade *)
         +   is_sp_destruct.
             (* understand how tokens_held has changed *)
@@ -2249,10 +2267,9 @@ Proof.
                     destruct rate_exists as [x rate_exists].
                     apply (FMap.In_elements (token_in_trade t) x (stor_rates new_state))
                     in rate_exists.
-                    apply (in_map fst 
+                    now apply (in_map fst 
                         (FMap.elements (stor_rates new_state))
-                        (token_in_trade t, x)).
-                    assumption. }
+                        (token_in_trade t, x)). }
                 assert (Permutation 
                     (token_in_trade t :: 
                     remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))
@@ -2297,8 +2314,7 @@ Proof.
                         (* prove the In result *)
                         -   apply in_cons.
                             apply in_in_remove.
-                            +   apply not_eq_sym. 
-                                assumption.
+                            +   now apply not_eq_sym.
                             +   assert (exists x, 
                                     FMap.find (token_out_trade t) (stor_rates new_state) = Some x) 
                                 as rate_exists. 
@@ -2312,14 +2328,12 @@ Proof.
                                     clear x x0.
                                     (* get the rate from the new state *)
                                     rewrite <- (rz_unchanged (token_out_trade t) (not_eq_sym tx_neq_ty)) in prev_rate.
-                                    exists x1.
-                                    assumption. }
+                                    now exists x1. }
                                 destruct rate_exists as [x rate_exists].
                                 apply FMap.In_elements in rate_exists.
-                                apply (in_map fst 
+                                now apply (in_map fst 
                                     (FMap.elements (stor_rates new_state))
-                                    (token_out_trade t, x)).
-                                assumption. }
+                                    (token_out_trade t, x)). }
                     exact (Permutation_trans permute_step_2 (Permutation_sym permute_step_1)). }
                 exact (Permutation_trans permute_1 
                     (Permutation_trans permute_2
@@ -2383,15 +2397,13 @@ Proof.
                         destruct trade_check as [_ trade_check].
                         destruct trade_check as [prev_rate _].
                         clear x x1.
-                        exists x0.
-                        assumption. }
+                        now exists x0. }
                     destruct rate_exists as [x rate_exists].
                     apply (FMap.In_elements (token_in_trade t) x (stor_rates prev_state))
                     in rate_exists.
-                    apply (in_map fst 
+                    now apply (in_map fst 
                         (FMap.elements (stor_rates prev_state))
-                        (token_in_trade t, x)).
-                    assumption. }
+                        (token_in_trade t, x)). }
                 assert (Permutation 
                     (token_in_trade t :: 
                     remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))
@@ -2436,8 +2448,7 @@ Proof.
                         (* prove the In result *)
                         -   apply in_cons.
                             apply in_in_remove.
-                            +   apply not_eq_sym. 
-                                assumption.
+                            +   now apply not_eq_sym.
                             +   assert (exists x, 
                                     FMap.find (token_out_trade t) (stor_rates prev_state) = Some x) 
                                 as rate_exists. 
@@ -2448,14 +2459,12 @@ Proof.
                                     destruct trade_check as [_ trade_check].
                                     destruct trade_check as [_ prev_rate].
                                     clear x x0.
-                                    exists x1.
-                                    assumption. }
+                                    now exists x1. }
                                 destruct rate_exists as [x rate_exists].
                                 apply FMap.In_elements in rate_exists.
-                                apply (in_map fst 
+                                now apply (in_map fst 
                                     (FMap.elements (stor_rates prev_state))
-                                    (token_out_trade t, x)).
-                                assumption. }
+                                    (token_out_trade t, x)). }
                     exact (Permutation_trans permute_step_2 (Permutation_sym permute_step_1)). }
                 exact (Permutation_trans permute_1 
                     (Permutation_trans permute_2
@@ -2532,9 +2541,8 @@ Proof.
                     unfold get_rate.
                     replace (FMap.find a (stor_rates new_state))
                     with (FMap.find a (stor_rates prev_state)).
-                    replace (get_bal a (stor_tokens_held new_state))
-                    with (get_bal a (stor_tokens_held prev_state)).
-                    reflexivity. }
+                    now replace (get_bal a (stor_tokens_held new_state))
+                    with (get_bal a (stor_tokens_held prev_state)). }
                 rewrite calc_eq.
                 apply Permutation_map.
                 unfold keys_minus_trades, keys_minus_trades_prev.
@@ -2559,8 +2567,7 @@ Proof.
                     destruct trade_check as [_ trade_check].
                     destruct trade_check as [prev_rate _].
                     clear x0 x2.
-                    exists x1.
-                    assumption. }
+                    now exists x1. }
                 destruct prev_x as [x' prev_x].
                 exact (FMap.keys_already (token_in_trade t) x' x (stor_rates prev_state) prev_x). }
 
@@ -2584,9 +2591,8 @@ Proof.
                 as ry_unchanged.
                 {   unfold get_rate.
                     pose proof (rz_unchanged (token_out_trade t) (not_eq_sym tx_neq_ty)).
-                    replace (FMap.find (token_out_trade t) (stor_rates new_state))
-                    with (FMap.find (token_out_trade t) (stor_rates prev_state)).
-                    reflexivity. }
+                    now replace (FMap.find (token_out_trade t) (stor_rates new_state))
+                    with (FMap.find (token_out_trade t) (stor_rates prev_state)). }
                 rewrite <- ry_unchanged.
                 set (r_y := get_rate (token_out_trade t) (stor_rates prev_state)).
                 unfold get_rate.
@@ -2597,12 +2603,719 @@ Proof.
             rewrite unchanged_keys_eq.
             rewrite N.add_assoc.
             rewrite N.add_assoc.
-            rewrite changed_keys_eq.
-            reflexivity.
+            now rewrite changed_keys_eq.
     (* Please reestablish the invariant after a recursive call *)
-    -   admit. (* exactly the same proof *)
+    -   destruct msg.
+        (* first, msg = None *)
+        2:{ is_sp_destruct.
+            pose proof (none_fails_pf prev_state chain ctx) as failed.
+            destruct failed as [err failed].
+            rewrite receive_some in failed.
+            inversion failed. }
+        (* msg = Some m *)
+        destruct m.
+        (* m = pool *)
+        +   is_sp_destruct.
+            (* understand how tokens_held has changed *)
+            pose proof (pool_increases_tokens_held_pf prev_state chain ctx p new_state new_acts
+                receive_some) as bal_update.
+            destruct bal_update as [bal_update bals_unchanged].
+            (* show all rates are the same *)
+            pose proof (pool_rates_unchanged_pf prev_state new_state chain ctx p new_acts
+                receive_some) as rates_update.
+            (* show how the outstanding tokens update *)
+            pose proof (pool_outstanding_pf prev_state new_state chain ctx p new_acts 
+                receive_some) as out_update.
+            simpl in out_update.
+            (* because the rates are unchanged, summing over them is unchanged *)
+            assert (tokens_to_values (stor_rates new_state)  (stor_tokens_held new_state) = 
+                    tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state))
+            as rates_unchanged.
+            {   unfold tokens_to_values.
+                rewrite (token_keys_invariant_pool p new_state new_acts prev_state ctx chain receive_some).
+                apply map_ext.
+                intro t.
+                unfold get_rate. 
+                now rewrite rates_update. }
+            rewrite rates_unchanged. clear rates_unchanged.
+            (* now separate the sum *)
+            assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) = 
+                    suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held prev_state)) + 
+                        get_rate (token_pooled p) (stor_rates prev_state) / 1000000 * qty_pooled p)
+            as separate_sum.
+            {   unfold tokens_to_values.
+                (* some simplifying notation *)
+                set (keys_minus_p := (remove token_eq_dec (token_pooled p) (FMap.keys (stor_rates prev_state)))).
+                set (tokens_to_values_new := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state) / 1000000).
+                set (tokens_to_values_prev := fun (k : token) => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state) / 1000000).
+                (* 1. show there's a Permutation with (token_pooled p) at the front *)
+                assert (Permutation
+                    (FMap.keys (stor_rates prev_state)) 
+                    ((token_pooled p) :: keys_minus_p))
+                as keys_permuted.
+                {   unfold keys_minus_p.
+                    (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
+                    pose proof (pool_entrypoint_check_2_pf prev_state new_state chain ctx p new_acts receive_some) as rate_exists.
+                    destruct rate_exists as [r_x rate_exists_el].
+                    apply FMap.In_elements in rate_exists_el.
+                    pose proof (in_map fst
+                        (FMap.elements (stor_rates prev_state))
+                        (token_pooled p, r_x)
+                        rate_exists_el)
+                    as rate_exists_key. clear rate_exists_el.
+                    simpl in rate_exists_key.
+                    (* recall NoDup keys *)
+                    pose proof (FMap.NoDup_keys (stor_rates prev_state))
+                    as nodup_keys.
+                    (* since NoDup keys, you can permute *)
+                    exact (nodup_permute 
+                        (token_pooled p) 
+                        (FMap.keys (stor_rates prev_state))
+                        token_eq_dec
+                        nodup_keys 
+                        rate_exists_key). }
+                (* Use the permutation to rewrite the LHS first, extracting (token_pooled p) *)
+                pose proof 
+                    (Permutation_map tokens_to_values_new)
+                        (* list 1 *)
+                        (FMap.keys (stor_rates prev_state))
+                        (* list 2 *)
+                        ((token_pooled p) :: keys_minus_p) 
+                        (* the previous permutation *)
+                        keys_permuted
+                as lhs_permute_map.
+                (* now that we have that permutation, rewrite in the suml *)
+                rewrite (suml_permute_commutes 
+                    (map tokens_to_values_new (FMap.keys (stor_rates prev_state)))
+                    (map tokens_to_values_new (token_pooled p :: keys_minus_p))
+                    lhs_permute_map).
+                (* now extract (token_pooled p) *)
+                rewrite (map_extract
+                    (token_pooled p)
+                    keys_minus_p
+                    tokens_to_values_new).
+                rewrite (suml_extract (tokens_to_values_new (token_pooled p))).
+                (* Now separate the sum on the RHS *)
+                pose proof 
+                    (Permutation_map tokens_to_values_prev)
+                        (* list 1 *)
+                        (FMap.keys (stor_rates prev_state))
+                        (* list 2 *)
+                        ((token_pooled p) :: keys_minus_p)
+                        (* the previous permutation *)
+                        keys_permuted
+                as rhs_permute_map.
+                (* now that we have that permutation, rewrite in the suml *)
+                rewrite (suml_permute_commutes 
+                    (map tokens_to_values_prev (FMap.keys (stor_rates prev_state)))
+                    (map tokens_to_values_prev (token_pooled p :: keys_minus_p))
+                    rhs_permute_map).
+                (* now extract (token_pooled p) *)
+                rewrite (map_extract
+                    (token_pooled p)
+                    keys_minus_p
+                    tokens_to_values_prev).
+                rewrite (suml_extract (tokens_to_values_prev (token_pooled p))).
+
+                (* Now proceed in two parts *)
+                (* first the sum of all the unchanged keys *)
+                assert 
+                    (suml (map tokens_to_values_new keys_minus_p) = 
+                     suml (map tokens_to_values_prev keys_minus_p))
+                as old_keys_eq.
+                {   assert (forall t, In t keys_minus_p -> t <> (token_pooled p))
+                    as t_neq.
+                    {   intros * H_in.
+                        unfold keys_minus_p in H_in.
+                        apply in_remove in H_in.
+                        destruct H_in as [_ res].
+                        exact res. }
+                    assert (forall t, In t keys_minus_p -> 
+                        tokens_to_values_new t = tokens_to_values_prev t)
+                    as tokens_to_vals_eq.
+                    {   intros * H_in.
+                        apply t_neq in H_in.
+                        apply bals_unchanged in H_in.
+                        unfold tokens_to_values_new, tokens_to_values_prev.
+                        now rewrite H_in. }
+                    now rewrite (mapped_eq
+                        token N
+                        tokens_to_values_new
+                        tokens_to_values_prev
+                        keys_minus_p
+                        tokens_to_vals_eq). }
+
+                (* then to the key that did change *)
+                assert
+                    (tokens_to_values_new (token_pooled p) = 
+                    tokens_to_values_prev (token_pooled p) + 
+                    get_rate (token_pooled p) (stor_rates prev_state) / 1000000 * qty_pooled p)
+                as new_key_eq.
+                {   unfold tokens_to_values_new, tokens_to_values_prev.
+                    rewrite bal_update.
+                    apply update_rates_balance_pool. }
+                rewrite old_keys_eq. rewrite new_key_eq.
+                rewrite <- N.add_assoc.
+                rewrite (N.add_comm
+                    (get_rate (token_pooled p) (stor_rates prev_state) / 1000000 * qty_pooled p)
+                    (suml (map tokens_to_values_prev keys_minus_p))).
+                now rewrite N.add_assoc. }
+            rewrite separate_sum. clear separate_sum.
+            rewrite out_update.
+            now rewrite IH.
+        (* m = unpool *)
+        +   is_sp_destruct.
+            (* understand how tokens_held has changed *)
+            pose proof (unpool_decreases_tokens_held_pf prev_state chain ctx u new_state new_acts
+                receive_some) as bal_update.
+            destruct bal_update as [bal_update bals_unchanged].
+            (* show all rates are the same *)
+            pose proof (unpool_rates_unchanged_pf prev_state new_state chain ctx u new_acts
+                receive_some) as rates_update.
+            (* show how the outstanding tokens update *)
+            pose proof (unpool_outstanding_pf prev_state new_state chain ctx u new_acts 
+                receive_some) as out_update.
+            simpl in out_update.
+            rewrite out_update. clear out_update.
+            (* because the rates are unchanged, summing over them is unchanged *)
+            assert (tokens_to_values (stor_rates new_state)  (stor_tokens_held new_state) = 
+                    tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state))
+            as rates_unchanged.
+            {   unfold tokens_to_values.
+                rewrite (token_keys_invariant_unpool u new_state new_acts prev_state ctx chain receive_some).
+                apply map_ext.
+                intro t.
+                unfold get_rate. 
+                now rewrite rates_update. }
+            rewrite rates_unchanged. clear rates_unchanged.
+            (* now separate the sum *)
+            assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) = 
+                    suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held prev_state)) - 
+                        qty_unpooled u)
+            as separate_sum.
+            {   unfold tokens_to_values.
+                (* some simplifying notation *)
+                set (keys_minus_u := (remove token_eq_dec (token_unpooled u) (FMap.keys (stor_rates prev_state)))).
+                set (tokens_to_values_new := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state) / 1000000).
+                set (tokens_to_values_prev := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state) / 1000000).
+                (* 1. show there's a Permutation with (token_pooled p) at the front *)
+                assert (Permutation
+                    (FMap.keys (stor_rates prev_state)) 
+                    ((token_unpooled u) :: keys_minus_u))
+                as keys_permuted.
+                {   unfold keys_minus_u.
+                    (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
+                    pose proof (unpool_entrypoint_check_2_pf prev_state new_state chain ctx u new_acts receive_some) as rate_exists.
+                    destruct rate_exists as [r_x rate_exists_el].
+                    apply FMap.In_elements in rate_exists_el.
+                    pose proof (in_map fst
+                        (FMap.elements (stor_rates prev_state))
+                        (token_unpooled u, r_x)
+                        rate_exists_el)
+                    as rate_exists_key. clear rate_exists_el.
+                    simpl in rate_exists_key.
+                    (* recall NoDup keys *)
+                    pose proof (FMap.NoDup_keys (stor_rates prev_state))
+                    as nodup_keys.
+                    (* since NoDup keys, you can permute *)
+                    exact (nodup_permute 
+                        (token_unpooled u) 
+                        (FMap.keys (stor_rates prev_state))
+                        token_eq_dec
+                        nodup_keys 
+                        rate_exists_key). }
+                (* Use the permutation to rewrite the LHS first, extracting (token_pooled p) *)
+                pose proof 
+                    (Permutation_map tokens_to_values_new)
+                        (* list 1 *)
+                        (FMap.keys (stor_rates prev_state))
+                        (* list 2 *)
+                        ((token_unpooled u) :: keys_minus_u) 
+                        (* the previous permutation *)
+                        keys_permuted
+                as lhs_permute_map.
+                (* now that we have that permutation, rewrite in the suml *)
+                rewrite (suml_permute_commutes 
+                    (map tokens_to_values_new (FMap.keys (stor_rates prev_state)))
+                    (map tokens_to_values_new (token_unpooled u :: keys_minus_u))
+                    lhs_permute_map).
+                (* now extract (token_pooled p) *)
+                rewrite (map_extract
+                    (token_unpooled u)
+                    keys_minus_u
+                    tokens_to_values_new).
+                rewrite (suml_extract (tokens_to_values_new (token_unpooled u))).
+                (* Now separate the sum on the RHS *)
+                pose proof 
+                    (Permutation_map tokens_to_values_prev)
+                        (* list 1 *)
+                        (FMap.keys (stor_rates prev_state))
+                        (* list 2 *)
+                        ((token_unpooled u) :: keys_minus_u)
+                        (* the previous permutation *)
+                        keys_permuted
+                as rhs_permute_map.
+                (* now that we have that permutation, rewrite in the suml *)
+                rewrite (suml_permute_commutes 
+                    (map tokens_to_values_prev (FMap.keys (stor_rates prev_state)))
+                    (map tokens_to_values_prev (token_unpooled u :: keys_minus_u))
+                    rhs_permute_map).
+                (* now extract (token_pooled p) *)
+                rewrite (map_extract
+                    (token_unpooled u)
+                    keys_minus_u
+                    tokens_to_values_prev).
+                rewrite (suml_extract (tokens_to_values_prev (token_unpooled u))).
+
+                (* Now proceed in two parts *)
+                (* first the sum of all the unchanged keys *)
+                assert 
+                    (suml (map tokens_to_values_new keys_minus_u) = 
+                     suml (map tokens_to_values_prev keys_minus_u))
+                as old_keys_eq.
+                {   assert (forall t, In t keys_minus_u -> t <> (token_unpooled u))
+                    as t_neq.
+                    {   intros * H_in.
+                        unfold keys_minus_u in H_in.
+                        apply in_remove in H_in.
+                        destruct H_in as [_ res].
+                        exact res. }
+                    assert (forall t, In t keys_minus_u -> 
+                        tokens_to_values_new t = tokens_to_values_prev t)
+                    as tokens_to_vals_eq.
+                    {   intros * H_in.
+                        apply t_neq in H_in.
+                        apply bals_unchanged in H_in.
+                        unfold tokens_to_values_new, tokens_to_values_prev.
+                        now rewrite H_in. }
+                    now rewrite (mapped_eq
+                        token N
+                        tokens_to_values_new
+                        tokens_to_values_prev
+                        keys_minus_u
+                        tokens_to_vals_eq). }
+                rewrite old_keys_eq. clear old_keys_eq.
+
+                (* then to the key that did change *)
+                assert
+                    (tokens_to_values_new (token_unpooled u) = 
+                    tokens_to_values_prev (token_unpooled u) - qty_unpooled u)
+                as new_key_eq.
+                {   unfold tokens_to_values_new, tokens_to_values_prev.
+                    (* get the calculation from the specification *)
+                    rewrite bal_update.
+                    apply update_rates_balance_unpool. }
+                rewrite new_key_eq.
+                
+                (* this is an additional condition required here so that commutativity applies *)
+                assert (qty_unpooled u <= tokens_to_values_prev (token_unpooled u))
+                as unpooled_leq. {
+                    unfold tokens_to_values_prev.
+                    exact (unpool_entrypoint_check_3_pf prev_state new_state chain ctx u new_acts receive_some). }
+                now rewrite (N.add_sub_swap 
+                    (tokens_to_values_prev (token_unpooled u))
+                    (suml (map tokens_to_values_prev keys_minus_u))
+                    (qty_unpooled u)
+                    unpooled_leq). }
+            rewrite separate_sum. clear separate_sum.
+            now rewrite IH.
+        (* m = trade *)
+        +   is_sp_destruct.
+            (* understand how tokens_held has changed *)
+            pose proof (trade_tokens_held_update_pf prev_state chain ctx t new_state new_acts 
+                receive_some) as tokens_held_update.
+            destruct tokens_held_update as [tokens_held_update_ty tokens_held_update].
+            destruct tokens_held_update as [tokens_held_update_tx tokens_held_update_tz].
+            (* how calling trade updates rates *)
+            pose proof (trade_update_rates_formula_pf prev_state chain ctx t new_state new_acts
+                receive_some) as rates_changed_and_unchanged.
+            destruct rates_changed_and_unchanged as [tx_neq_ty rates_changed_and_unchanged].
+            destruct rates_changed_and_unchanged as [rx_change rz_unchanged].
+            (* how outstanding_tokens has changed by calling trade *)
+            pose proof (trade_outstanding_update_pf prev_state chain ctx t new_state new_acts 
+                receive_some) as out_update.
+            rewrite out_update. clear out_update.
+            
+            (* LHS equals sum over tokens except for tx and ty, plus r_x' * etc , minus r_y * delta_y *)
+            
+            (* some notation *)
+            unfold tokens_to_values.
+            set (keys_minus_trade_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))).
+            set (keys_minus_trades := (remove token_eq_dec (token_out_trade t) keys_minus_trade_in)).
+            set (tokens_to_values_new := fun k : token => get_rate k (stor_rates new_state) * get_bal k (stor_tokens_held new_state) / 1000000).
+            
+            (* LHS *)
+            (* permute FMap.keys (stor_tokens_held new_state) to have tx :: ty :: keys' *)
+                (* for these, rates and balances are all the same as before *)
+            assert (Permutation
+                (FMap.keys (stor_rates new_state)) 
+                ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades))
+            as keys_permuted.
+            {   unfold keys_minus_trades.
+                unfold keys_minus_trade_in.
+                assert (Permutation 
+                    (FMap.keys (stor_rates new_state))
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state))))
+                as permute_1.
+                {   apply (nodup_permute
+                        (token_in_trade t)
+                        (FMap.keys (stor_rates new_state))
+                        token_eq_dec
+                        (FMap.NoDup_keys (stor_rates new_state))).
+                    assert (exists x, FMap.find (token_in_trade t) (stor_rates new_state) = Some x) as rate_exists.
+                    {   pose proof (trade_update_rates_pf prev_state chain ctx t new_state new_acts receive_some)
+                        as update_rates.
+                        destruct update_rates as [_ update_rates].
+                        simpl in update_rates.
+                        rewrite update_rates.
+                        set (x := (calc_rate_in (get_rate (token_in_trade t) (stor_rates prev_state))
+                        (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t)
+                        (stor_outstanding_tokens prev_state) (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
+                        exists x.
+                        apply FMap.find_add. }
+                    destruct rate_exists as [x rate_exists].
+                    apply (FMap.In_elements (token_in_trade t) x (stor_rates new_state))
+                    in rate_exists.
+                    now apply (in_map fst 
+                        (FMap.elements (stor_rates new_state))
+                        (token_in_trade t, x)). }
+                assert (Permutation 
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))
+                    ((token_out_trade t) :: (token_in_trade t) :: 
+                    remove token_eq_dec (token_out_trade t) 
+                    (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))))
+                as permute_2.
+                {   assert (Permutation 
+                        (token_out_trade t :: token_in_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates new_state))))
+                        (token_out_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates new_state)))))
+                    as permute_step_1. 
+                    {   assert (Permutation
+                            (token_in_trade t
+                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state))))
+                            (remove token_eq_dec (token_out_trade t)
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))))
+                        as inner_permute.
+                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))).
+                            rewrite remove_permute; try assumption.
+                            apply Permutation_refl. }
+                        exact (perm_skip (token_out_trade t) inner_permute). }
+                    assert (Permutation 
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))
+                    (token_out_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates new_state)))))
+                    as permute_step_2.
+                    {   apply nodup_permute.
+                        (* prove the NoDup result *)
+                        -   apply NoDup_cons.
+                            +   apply remove_In.
+                            +   apply nodup_remove.
+                                exact (FMap.NoDup_keys (stor_rates new_state)).
+                        (* prove the In result *)
+                        -   apply in_cons.
+                            apply in_in_remove.
+                            +   now apply not_eq_sym.
+                            +   assert (exists x, 
+                                    FMap.find (token_out_trade t) (stor_rates new_state) = Some x) 
+                                as rate_exists. 
+                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                    chain ctx t new_state new_acts receive_some) 
+                                    as trade_check.
+                                    (* get rate from prev_state *)
+                                    do 3 destruct trade_check as [* trade_check].
+                                    destruct trade_check as [_ trade_check].
+                                    destruct trade_check as [_ prev_rate].
+                                    clear x x0.
+                                    (* get the rate from the new state *)
+                                    rewrite <- (rz_unchanged (token_out_trade t) (not_eq_sym tx_neq_ty)) in prev_rate.
+                                    now exists x1. }
+                                destruct rate_exists as [x rate_exists].
+                                apply FMap.In_elements in rate_exists.
+                                now apply (in_map fst 
+                                    (FMap.elements (stor_rates new_state))
+                                    (token_out_trade t, x)). }
+                    exact (Permutation_trans permute_step_2 (Permutation_sym permute_step_1)). }
+                exact (Permutation_trans permute_1 
+                    (Permutation_trans permute_2
+                        (perm_swap (token_in_trade t) (token_out_trade t)
+                        (remove token_eq_dec (token_out_trade t)
+                        (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state))))))). }
+            (* Now separate LHS into ^^, plus new rate * t_x, minus rate * t_y *)
+            pose proof 
+                (Permutation_map tokens_to_values_new)
+                    (* list 1 *)
+                    (FMap.keys (stor_rates new_state))
+                    (* list 2 *)
+                    ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades)
+                    (* the previous permutation *)
+                    keys_permuted
+            as lhs_permute_map.
+            (* now that we have that permutation, we can decompose the suml *)
+            rewrite (suml_permute_commutes
+                (map tokens_to_values_new (FMap.keys (stor_rates new_state)))
+                (map tokens_to_values_new ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades))
+                lhs_permute_map).
+            (* now extract (token_in_trade t) and (token_out_trade t) *)
+            rewrite (map_extract 
+                (token_in_trade t)
+                (token_out_trade t :: keys_minus_trades)
+                tokens_to_values_new).
+            rewrite (map_extract 
+                (token_out_trade t)
+                keys_minus_trades
+                tokens_to_values_new).
+            rewrite (suml_extract (tokens_to_values_new (token_in_trade t))).
+            rewrite (suml_extract (tokens_to_values_new (token_out_trade t))).
+
+            (* permute FMap.keys for the OLD suml to MANIPULATE the inductive hypothesis IH *)
+            unfold tokens_to_values in IH.
+            set (keys_minus_trade_in_prev := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))).
+            set (keys_minus_trades_prev := (remove token_eq_dec (token_out_trade t) keys_minus_trade_in_prev)).
+            set (tokens_to_values_prev := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state) / 1000000) in IH.
+
+            assert (Permutation
+                (FMap.keys (stor_rates prev_state)) 
+                ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades_prev))
+            as keys_permuted_prev.
+            {   unfold keys_minus_trades_prev.
+                unfold keys_minus_trade_in_prev.
+                assert (Permutation 
+                    (FMap.keys (stor_rates prev_state))
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state))))
+                as permute_1.
+                {   apply (nodup_permute
+                        (token_in_trade t)
+                        (FMap.keys (stor_rates prev_state))
+                        token_eq_dec
+                        (FMap.NoDup_keys (stor_rates prev_state))).
+                    assert (exists x, FMap.find (token_in_trade t) (stor_rates prev_state) = Some x) as rate_exists.
+                    {   pose proof (trade_entrypoint_check_2_pf prev_state
+                            chain ctx t new_state new_acts receive_some) 
+                        as trade_check.
+                        do 3 destruct trade_check as [* trade_check].
+                        destruct trade_check as [_ trade_check].
+                        destruct trade_check as [prev_rate _].
+                        clear x x1.
+                        now exists x0. }
+                    destruct rate_exists as [x rate_exists].
+                    apply (FMap.In_elements (token_in_trade t) x (stor_rates prev_state))
+                    in rate_exists.
+                    now apply (in_map fst 
+                        (FMap.elements (stor_rates prev_state))
+                        (token_in_trade t, x)). }
+                assert (Permutation 
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))
+                    ((token_out_trade t) :: (token_in_trade t) :: 
+                    remove token_eq_dec (token_out_trade t) 
+                    (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))))
+                as permute_2.
+                {   assert (Permutation 
+                        (token_out_trade t :: token_in_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates prev_state))))
+                        (token_out_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates prev_state)))))
+                    as permute_step_1. 
+                    {   assert (Permutation
+                            (token_in_trade t
+                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state))))
+                            (remove token_eq_dec (token_out_trade t)
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))))
+                        as inner_permute.
+                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))).
+                            rewrite remove_permute; try assumption.
+                            apply Permutation_refl. }
+                        exact (perm_skip (token_out_trade t) inner_permute). }
+                    assert (Permutation 
+                    (token_in_trade t :: 
+                    remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))
+                    (token_out_trade t :: 
+                            remove token_eq_dec (token_out_trade t) 
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                                (FMap.keys (stor_rates prev_state)))))
+                    as permute_step_2.
+                    {   apply nodup_permute.
+                        (* prove the NoDup result *)
+                        -   apply NoDup_cons.
+                            +   apply remove_In.
+                            +   apply nodup_remove.
+                                exact (FMap.NoDup_keys (stor_rates prev_state)).
+                        (* prove the In result *)
+                        -   apply in_cons.
+                            apply in_in_remove.
+                            +   now apply not_eq_sym.
+                            +   assert (exists x, 
+                                    FMap.find (token_out_trade t) (stor_rates prev_state) = Some x) 
+                                as rate_exists. 
+                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                        chain ctx t new_state new_acts receive_some) 
+                                    as trade_check.
+                                    do 3 destruct trade_check as [* trade_check].
+                                    destruct trade_check as [_ trade_check].
+                                    destruct trade_check as [_ prev_rate].
+                                    clear x x0.
+                                    now exists x1. }
+                                destruct rate_exists as [x rate_exists].
+                                apply FMap.In_elements in rate_exists.
+                                now apply (in_map fst 
+                                    (FMap.elements (stor_rates prev_state))
+                                    (token_out_trade t, x)). }
+                    exact (Permutation_trans permute_step_2 (Permutation_sym permute_step_1)). }
+                exact (Permutation_trans permute_1 
+                    (Permutation_trans permute_2
+                        (perm_swap (token_in_trade t) (token_out_trade t)
+                        (remove token_eq_dec (token_out_trade t)
+                        (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state))))))). }
+            (* Now separate LHS into ^^, plus new rate * t_x, minus rate * t_y *)
+            pose proof 
+                (Permutation_map tokens_to_values_prev)
+                    (* list 1 *)
+                    (FMap.keys (stor_rates prev_state))
+                    (* list 2 *)
+                    ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades_prev)
+                    (* the previous permutation *)
+                    keys_permuted_prev
+            as lhs_permute_map_prev.
+            (* now that we have that permutation, we can decompose the suml *)
+            rewrite (suml_permute_commutes
+                (map tokens_to_values_prev (FMap.keys (stor_rates prev_state)))
+                (map tokens_to_values_prev ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades_prev))
+                lhs_permute_map_prev)
+            in IH.
+            (* now extract (token_in_trade t) and (token_out_trade t) *)
+            rewrite (map_extract 
+                (token_in_trade t)
+                (token_out_trade t :: keys_minus_trades_prev)
+                tokens_to_values_prev)
+            in IH.
+            rewrite (map_extract 
+                (token_out_trade t)
+                keys_minus_trades_prev
+                tokens_to_values_prev)
+            in IH.
+            rewrite (suml_extract (tokens_to_values_prev (token_in_trade t))) in IH.
+            rewrite (suml_extract (tokens_to_values_prev (token_out_trade t))) in IH.
+            rewrite <- IH.
+
+            (* Proceed in two parts *)
+            (* excluding the two tokens involved in the trade, all else is equal *)
+            assert (suml (map tokens_to_values_new  keys_minus_trades) = 
+                    suml (map tokens_to_values_prev keys_minus_trades_prev))
+            as unchanged_keys_eq.
+            {   apply suml_permute_commutes.
+                assert ((map tokens_to_values_prev keys_minus_trades_prev)
+                    = (map tokens_to_values_new keys_minus_trades_prev))
+                as calc_eq.
+                {   (* We use rz_unchanged and tokens_held_update_tz *)
+                    apply mapped_eq.
+                    intros a in_keys.
+                    (* first prove that a <> token_in_trade t and a <> token_out_trade t *)
+                    assert (a <> (token_in_trade t) /\ a <> (token_out_trade t))
+                    as a_neq_traded.
+                    {   unfold keys_minus_trades_prev in in_keys.
+                        pose proof (in_remove token_eq_dec
+                            keys_minus_trade_in_prev
+                            a (token_out_trade t)
+                            in_keys)
+                        as a_neq_out.
+                        destruct a_neq_out as [a_in_prev a_neq_out].
+                        unfold keys_minus_trade_in_prev in a_in_prev.
+                        pose proof (in_remove token_eq_dec
+                            (FMap.keys (stor_rates prev_state))
+                            a (token_in_trade t)
+                            a_in_prev)
+                        as a_neq_in.
+                        destruct a_neq_in as [_ a_neq_in].
+                        split;
+                        try exact a_neq_out;
+                        try exact a_neq_in. }
+                    destruct a_neq_traded as [a_neq_in a_neq_out].
+                    pose proof (rz_unchanged a a_neq_in) as rates_eq.
+                    pose proof (tokens_held_update_tz a a_neq_in a_neq_out) as bal_eq.
+                    unfold keys_minus_trades_prev, tokens_to_values_prev, tokens_to_values_new.
+                    unfold get_rate.
+                    replace (FMap.find a (stor_rates new_state))
+                    with (FMap.find a (stor_rates prev_state)).
+                    now replace (get_bal a (stor_tokens_held new_state))
+                    with (get_bal a (stor_tokens_held prev_state)). }
+                rewrite calc_eq.
+                apply Permutation_map.
+                unfold keys_minus_trades, keys_minus_trades_prev.
+                unfold keys_minus_trade_in, keys_minus_trade_in_prev.
+                do 2 (apply remove_permute_2; 
+                try apply nodup_remove;
+                try apply FMap.NoDup_keys).
+                (* ... *)
+                pose proof (trade_update_rates_pf prev_state chain ctx t new_state new_acts receive_some)
+                as update_rates.
+                destruct update_rates as [_ update_rates].
+                rewrite update_rates. clear update_rates.
+                set (x := (calc_rate_in (get_rate (token_in_trade t) (stor_rates prev_state))
+                (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t) (stor_outstanding_tokens prev_state)
+                (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
+                assert (exists x', FMap.find (token_in_trade t) (stor_rates prev_state) = Some x')
+                as prev_x.
+                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                        chain ctx t new_state new_acts receive_some) 
+                    as trade_check.
+                    do 3 destruct trade_check as [* trade_check].
+                    destruct trade_check as [_ trade_check].
+                    destruct trade_check as [prev_rate _].
+                    clear x0 x2.
+                    now exists x1. }
+                destruct prev_x as [x' prev_x].
+                exact (FMap.keys_already (token_in_trade t) x' x (stor_rates prev_state) prev_x). }
+
+            assert (tokens_to_values_new (token_in_trade t) + tokens_to_values_new (token_out_trade t)
+                = tokens_to_values_prev (token_in_trade t) + tokens_to_values_prev (token_out_trade t))
+            as changed_keys_eq.
+            {   unfold tokens_to_values_new, tokens_to_values_prev.
+                set (r_x' := (calc_rate_in (get_rate (token_in_trade t) (stor_rates prev_state))
+                (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t) (stor_outstanding_tokens prev_state)
+                (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
+                rewrite tokens_held_update_tx.
+                rewrite tokens_held_update_ty.
+                set (delta_y := calc_delta_y (get_rate (token_in_trade t) (stor_rates prev_state))
+                (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t) (stor_outstanding_tokens prev_state)
+                (get_bal (token_in_trade t) (stor_tokens_held prev_state))).
+                set (r_x := get_rate (token_in_trade t) (stor_rates prev_state)).
+                set (x := get_bal (token_in_trade t) (stor_tokens_held prev_state)).
+                set (y := get_bal (token_out_trade t) (stor_tokens_held prev_state)).
+                assert (get_rate (token_out_trade t) (stor_rates prev_state) = 
+                    get_rate (token_out_trade t) (stor_rates new_state)) 
+                as ry_unchanged.
+                {   unfold get_rate.
+                    pose proof (rz_unchanged (token_out_trade t) (not_eq_sym tx_neq_ty)).
+                    now replace (FMap.find (token_out_trade t) (stor_rates new_state))
+                    with (FMap.find (token_out_trade t) (stor_rates prev_state)). }
+                rewrite <- ry_unchanged.
+                set (r_y := get_rate (token_out_trade t) (stor_rates prev_state)).
+                unfold get_rate.
+                replace (FMap.find (token_in_trade t) (stor_rates new_state))
+                with (Some r_x').
+                (* finally, from the specification *)
+                apply update_rates_balance_trade. }
+            rewrite unchanged_keys_eq.
+            rewrite N.add_assoc.
+            rewrite N.add_assoc.
+            now rewrite changed_keys_eq.
     (* solve remaining facts *)
     -   solve_facts.
-Admitted.
+Qed.
 
 End AbstractSpecification.
