@@ -587,6 +587,21 @@ Definition trade_pricing (contract : Contract Setup Msg State Error) : Prop :=
     Some (get_bal (token_out_trade msg_payload) (stor_tokens_held cstate) 
         - (calc_delta_y rate_in rate_out delta_x k x)).
 
+Definition trade_amounts_nonnegative (contract : Contract Setup Msg State Error) : Prop :=
+    forall cstate chain ctx msg_payload cstate' acts,
+    (* the call to TRADE was successful *)
+    receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
+    (* delta_x and delta_y are nonnegative *)
+    let t_x := msg_payload.(token_in_trade) in 
+    let t_y := msg_payload.(token_out_trade) in 
+    let rate_in := (get_rate t_x (stor_rates cstate)) in 
+    let rate_out := (get_rate t_y (stor_rates cstate)) in 
+    let k := (stor_outstanding_tokens cstate) in 
+    let x := get_bal t_x (stor_tokens_held cstate) in 
+    let delta_x := msg_payload.(qty_trade) in 
+    let delta_y := calc_delta_y rate_in rate_out delta_x k x in 
+    0 <= delta_x /\ 
+    0 <= delta_y.    
 
 (*
 Definition stor_outstanding_tokens (contract : Contract Setup Msg State Error) : Prop :=
@@ -677,6 +692,7 @@ Definition is_structured_pool
     trade_tokens_held_update C /\
     trade_outstanding_update C /\
     trade_pricing C /\ 
+    trade_amounts_nonnegative C /\
     (* initialization specification *)
     initialized_with_positive_rates C /\
     initialized_with_zero_balance C /\
@@ -711,10 +727,11 @@ Tactic Notation "is_sp_destruct" :=
         destruct is_sp' as [trade_pricing_formula_pf is_sp'];
         destruct is_sp' as [trade_update_rates_pf is_sp'];
         destruct is_sp' as [trade_update_rates_formula_pf is_sp'];
-        destruct is_sp' as [trade_emits_transfers is_sp'];
+        destruct is_sp' as [trade_emits_transfers_pf is_sp'];
         destruct is_sp' as [trade_tokens_held_update_pf is_sp']; 
         destruct is_sp' as [trade_outstanding_update_pf is_sp'];
-        destruct is_sp' as [trade_pricing is_sp'];
+        destruct is_sp' as [trade_pricing_pf is_sp'];
+        destruct is_sp' as [trade_amounts_nonnegative_pf is_sp'];
         (* isolate the initialization specification *)
         destruct is_sp' as [initialized_with_positive_rates_pf is_sp']; 
         destruct is_sp' as [initialized_with_zero_balance_pf is_sp']; 
@@ -775,12 +792,12 @@ Admitted.
 (* Assumed: delta_y < ( r_y / r_x ) * delta_x *)
 Axiom trade_upper_bound : forall r_x r_y delta_x k x, 
     let delta_y := calc_delta_y r_x r_y delta_x k x in 
-    delta_y < ( r_y / r_x ) * delta_x.
+    delta_y < ( r_x / r_y ) * delta_x.
 
 (* just simplified from ^^ *)
 Axiom trade_upper_bound_2 : forall r_x r_y delta_x k x, 
     let delta_y := calc_delta_y r_x r_y delta_x k x in 
-    r_x * delta_y < r_y * delta_x.
+    r_y * delta_y < r_x * delta_x.
 
 (* TODO add in > 0 for each of these (fix arb proof); distill the right assumption to make
     about the xy = k curve *)
@@ -847,6 +864,61 @@ Lemma update_rates_balance_trade : forall t prev_state,
 Admitted.
 
 (* End Assumptions *)
+
+
+(* Some results on successive trades *)
+
+(* first a type to describe successive trades *)
+Record trade_sequence_type := build_trade_sequence_type {
+    seq_chain : ChainState ; 
+    seq_ctx : ContractCallContext ; 
+    seq_cstate : State ; 
+    seq_trade_data : trade_data ;
+    seq_res_acts : list ActionBody ;
+}.
+
+(* a function to calculate the the trade output of the final trade, delta_x' *)
+Definition trade_to_delta_y (t : trade_sequence_type) := 
+    let cstate := seq_cstate t in 
+    let token_in := token_in_trade (seq_trade_data t) in 
+    let token_out := token_out_trade (seq_trade_data t) in 
+    let rate_in := get_rate token_in (stor_rates cstate) in 
+    let rate_out := get_rate token_out (stor_rates cstate) in 
+    let delta_x := qty_trade (seq_trade_data t) in 
+    let k := stor_outstanding_tokens cstate in 
+    let x := get_bal token_in (stor_tokens_held cstate) in 
+    (* the calculation *)
+    calc_delta_y rate_in rate_out delta_x k x.
+
+Definition trade_to_rx' (t : trade_sequence_type) := 
+    let cstate := seq_cstate t in 
+    let token_in := token_in_trade (seq_trade_data t) in 
+    let token_out := token_out_trade (seq_trade_data t) in 
+    let rate_in := get_rate token_in (stor_rates cstate) in 
+    let rate_out := get_rate token_out (stor_rates cstate) in 
+    let delta_x := qty_trade (seq_trade_data t) in 
+    let k := stor_outstanding_tokens cstate in 
+    let x := get_bal token_in (stor_tokens_held cstate) in 
+    (* the calculation *)
+    calc_rate_in rate_in rate_out delta_x k x.
+
+Lemma trade_upper_bound_2' : forall t,
+    let r_x := get_rate (token_in_trade (seq_trade_data t)) (stor_rates (seq_cstate t)) in 
+    let r_y := get_rate (token_out_trade (seq_trade_data t)) (stor_rates (seq_cstate t)) in 
+    let delta_x := qty_trade (seq_trade_data t) in 
+    let delta_y := trade_to_delta_y t in 
+    r_y * delta_y < r_x * delta_x.
+Admitted.
+
+Lemma trade_leq_lemma : forall t, 
+    let t_x := token_in_trade (seq_trade_data t) in 
+    let t_y := token_out_trade (seq_trade_data t) in 
+    let r_x' := trade_to_rx' t in 
+    let r_y := get_rate t_y (stor_rates (seq_cstate t)) in 
+    let delta_x := qty_trade (seq_trade_data t) in 
+    let delta_y := trade_to_delta_y t in 
+    r_y * delta_y <= r_x' * delta_x.
+Admitted.
 
 
 (* Demand Sensitivity :
@@ -1231,51 +1303,34 @@ Qed.
     arbitrage oportunities internal to the pool.
 *)
 
-(* first a type to describe successive trades *)
-Record trade_sequence_type := build_trade_sequence_type {
-    seq_chain : ChainState ; 
-    seq_ctx : ContractCallContext ; 
-    seq_cstate : State ; 
-    seq_trade_data : trade_data ;
-    seq_res_acts : list ActionBody ;
-}.
-
 (* a proposition that indicates a list of trades are successive, successful trades *)
 Fixpoint are_successive_trades (trade_sequence : list trade_sequence_type) : Prop := 
     match trade_sequence with 
     | [] => True
-    | [ t ] =>
-        (* if the list has one element, it just has to succeed *)
-        exists cstate' acts,
-        receive contract 
-            (seq_chain t)
-            (seq_ctx t)
-            (seq_cstate t) 
-            (Some (trade (seq_trade_data t))) 
-        = Ok(cstate', acts)
-    | t1 :: t2 :: l => 
-        (* the trade t1 goes through, connecting t1 and t2 *)
-        receive contract 
-            (seq_chain t1) 
-            (seq_ctx t1) 
-            (seq_cstate t1) 
-            (Some (trade (seq_trade_data t1))) 
-        = Ok(seq_cstate t2, seq_res_acts t2) /\ 
-        (are_successive_trades l)
+    | t1 :: l => 
+        match l with 
+        | [] => 
+            (* if the list has one element, it just has to succeed *)
+            exists cstate' acts,
+            receive contract 
+                (seq_chain t1)
+                (seq_ctx t1)
+                (seq_cstate t1) 
+                (Some (trade (seq_trade_data t1))) 
+            = Ok(cstate', acts)
+        | t2 :: l' => 
+            (* the trade t1 goes through, connecting t1 and t2 *)
+            receive contract 
+                (seq_chain t1) 
+                (seq_ctx t1) 
+                (seq_cstate t1) 
+                (Some (trade (seq_trade_data t1))) 
+            = Ok(seq_cstate t2, seq_res_acts t2) /\ 
+            (qty_trade (seq_trade_data t2) = trade_to_delta_y t1) /\
+            (token_in_trade (seq_trade_data t2) = token_out_trade (seq_trade_data t1)) /\
+            (are_successive_trades l)
+        end
     end.
-
-(* a function to calculate the the trade output of the final trade, delta_x' *)
-Definition trade_to_delta_y (t : trade_sequence_type) := 
-    let cstate := seq_cstate t in 
-    let token_in := token_in_trade (seq_trade_data t) in 
-    let token_out := token_out_trade (seq_trade_data t) in 
-    let rate_in := get_rate token_in (stor_rates cstate) in 
-    let rate_out := get_rate token_out (stor_rates cstate) in 
-    let delta_x := qty_trade (seq_trade_data t) in 
-    let k := stor_outstanding_tokens cstate in 
-    let x := get_bal token_in (stor_tokens_held cstate) in 
-    (* the calculation *)
-    calc_delta_y rate_in rate_out delta_x k x.
 
 Fixpoint leq_list (l : list N) : Prop := 
     match l with 
@@ -1297,6 +1352,76 @@ Fixpoint geq_list (l : list N) : Prop :=
         end 
     end.
 
+Lemma rev_injective : forall {A : Type} (l l' : list A), rev l = rev l' -> l = l'.
+Proof.
+  intros A l l' H_rev.
+  rewrite <- (rev_involutive l).
+  rewrite <- (rev_involutive l').
+  apply f_equal, H_rev.
+Qed.
+
+Lemma geq_cons : forall a l,
+    geq_list (a :: l) -> 
+    geq_list l.
+Proof.
+    intros * H_geq.
+    destruct l as [| a' l]; auto.
+    unfold geq_list in *.
+    now destruct H_geq as [geq ind_l].
+Qed.
+
+Lemma geq_app : forall l l',
+    geq_list (l ++ l') -> 
+    geq_list l /\ geq_list l'.
+Proof.
+    intros * H_geq.
+    split.
+    -   induction l.
+        +   now unfold geq_list.
+        +   rewrite <- app_comm_cons in H_geq.
+            pose proof (IHl (geq_cons a (l ++ l') H_geq)) as geq_l.
+            unfold geq_list.
+            destruct l; auto.
+            unfold geq_list in geq_l.
+            split; try assumption.
+            clear geq_l.
+            rewrite <- app_comm_cons in H_geq.
+            unfold geq_list in H_geq.
+            now destruct H_geq as [g_geq_n _].
+    -   induction l; auto.
+        rewrite <- app_comm_cons in H_geq.
+        now apply geq_cons in H_geq.
+Qed.
+
+Lemma geq_cons_remove_simpl : forall a a' l, 
+    geq_list (a :: a' :: l) -> 
+    geq_list (a :: l).
+Proof.
+    intros * H_geq.
+    destruct l as [| a'' l].
+    -   now unfold geq_list.
+    -   unfold geq_list in *.
+        destruct H_geq as [a_geq_a' [a'_geq_a'' H_geq]].
+        split; auto.
+        apply N.ge_le in a_geq_a', a'_geq_a''.
+        apply N.le_ge.
+        now apply (N.le_trans a'' a' a).
+Qed.
+
+Lemma list_decompose {A : Type} : forall (l : list A), l = [] \/ exists l' b, l = (l' ++ [b])%list.
+Proof.
+  intros.
+  destruct (rev l) eqn:H_rev.
+  - left. 
+    now apply rev_injective.
+  - right.
+    exists (rev l0), a.
+    apply rev_injective.
+    rewrite H_rev.
+    rewrite rev_unit.
+    now rewrite rev_involutive.
+Qed.
+
 Lemma geq_transitive : forall l fst lst,
     hd_error l = Some fst -> 
     hd_error (rev l) = Some lst -> 
@@ -1305,8 +1430,7 @@ Lemma geq_transitive : forall l fst lst,
 Proof.
     intros * hd_fst tl_lst H_geq_list.
     destruct l as [| a l]; try rewrite hd_error_nil in *; try discriminate.
-    assert (l = [] \/ exists l' b, l = (l' ++ [b])%list) as l_decompose.
-    { admit. }
+    pose proof (list_decompose l) as l_decompose.
     destruct l_decompose as [one_txn | l_decompose].
     -   rewrite one_txn in *.
         cbn in hd_fst. injection hd_fst. intro a_fst.
@@ -1315,46 +1439,37 @@ Proof.
     -   destruct l_decompose as [l' [b l_decompose]].
         rewrite l_decompose in *. clear l_decompose.
         cbn in hd_fst. injection hd_fst. intro a_fst.
-        cbn in tl_lst.
-Admitted.
+        assert (b = lst) as b_lst.
+        {   cbn in tl_lst.
+            rewrite rev_unit in tl_lst.
+            rewrite <- app_comm_cons in tl_lst.
+            now simpl in tl_lst. }
+        (* by induction on l' *)
+        induction l'.
+        +   rewrite app_nil_l in *.
+            unfold geq_list in H_geq_list.
+            destruct H_geq_list as [qeg _].
+            apply (N.ge_le a b) in qeg.
+            now rewrite <- a_fst, <- b_lst.
+        +   apply IHl'.
+            *   cbn.
+                rewrite rev_unit.
+                rewrite <- app_comm_cons.
+                now simpl.
+            *   rewrite <- app_comm_cons in H_geq_list.
+                now apply geq_cons_remove_simpl in H_geq_list.
+Qed.
 
 Definition trade_to_ry_delta_y (t : trade_sequence_type) := 
     let delta_y := trade_to_delta_y t in 
     let rate_y := get_rate (token_out_trade (seq_trade_data t)) (stor_rates (seq_cstate t)) in 
     rate_y * delta_y.
 
-Lemma geq_list_is_sufficient : forall trade_sequence t_fst t_last, 
-    (hd_error trade_sequence) = Some t_fst ->
-    (hd_error (rev trade_sequence)) = Some t_last ->
-    geq_list (map trade_to_ry_delta_y trade_sequence) ->
-    let delta_x := qty_trade (seq_trade_data t_fst) in 
-    let delta_x' := trade_to_delta_y t_last in 
-    delta_x' <= delta_x.
+Lemma mult_strict_mono : forall x y z : N, x <> 0 -> x * y <= x * z -> y <= z.
 Proof.
-    intros * fst_txn lst_txn H_geq_list *.
-    destruct trade_sequence; inversion fst_txn.
-    destruct trade_sequence.
-    (* the case that this is a trade t_x -> t_x *)
-    {   rename H7 into tx_is_fst.
-        assert (t = t_last) as tx_is_last.
-        { cbn in lst_txn. injection lst_txn. auto. }
-        unfold delta_x', delta_x.
-        rewrite <- tx_is_fst, <- tx_is_last.
-        admit. }
-    (* now, the case of t_x -> t_y -> [...] -> t_x *)
-    set (op_t_penultimate := (hd_error (tail (rev trade_sequence)))).
-    assert (exists t_penultimate, Some t_penultimate = op_t_penultimate) as op_t_destruct. admit.
-    destruct op_t_destruct as [t_penultimate pen_txn]. 
-    unfold op_t_penultimate in pen_txn. clear op_t_penultimate.
-    (* r_z delta_z <= r_x' delta_x => delta_x' <= delta_x *)
-Admitted.
-
-Lemma swap_rate_lemma : forall trade_sequence, 
-    (* if this is a list of successive trades *)
-    are_successive_trades trade_sequence -> 
-    (* then  *)
-    geq_list (map trade_to_ry_delta_y trade_sequence).
-Admitted.
+  intros x y z Hx Hz.
+  now apply N.mul_le_mono_pos_l in Hz.
+Qed.
 
 Lemma hd_transitive { A B : Type } : forall (l : list A) (f : A -> B) fst, 
     hd_error l = Some fst -> 
@@ -1369,10 +1484,206 @@ Proof.
     now rewrite a_eq_fst.
 Qed.
 
+Lemma geq_list_is_sufficient : forall trade_sequence t_x t_fst t_last cstate r_x, 
+    (* more assumptions *)
+    (hd_error trade_sequence) = Some t_fst ->
+    (hd_error (rev trade_sequence)) = Some t_last ->
+    token_in_trade (seq_trade_data t_fst) = t_x ->
+    token_out_trade (seq_trade_data t_last) = t_x -> 
+    seq_cstate t_fst = cstate ->
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 ->
+    FMap.find t_x (stor_rates cstate) = FMap.find t_x (stor_rates (seq_cstate t_last)) ->
+    (* the statement *)
+    geq_list (map trade_to_ry_delta_y trade_sequence) ->
+    let delta_x := qty_trade (seq_trade_data t_fst) in 
+    let delta_x' := trade_to_delta_y t_last in 
+    delta_x' <= delta_x.
+Proof.
+    intros * fst_txn lst_txn from_tx to_tx start_cstate rx_exists one_tx_txn H_geq_list *.
+    destruct trade_sequence; inversion fst_txn.
+    destruct trade_sequence.
+    (* the case that this is a trade t_x -> t_x *)
+    {   (* delta_x' < r_x / r_x delta_x => delta_x' < delta_x *)
+        rename H7 into tx_is_fst.
+        assert (t = t_last) as tx_is_last.
+        { cbn in lst_txn. injection lst_txn. auto. }
+        unfold delta_x', delta_x.
+        rewrite <- tx_is_fst, <- tx_is_last.
+        pose proof (trade_upper_bound_2' t) as trade_lt. cbn in trade_lt.
+        rewrite <- from_tx in to_tx.
+        rewrite <- tx_is_fst, <- tx_is_last in *.
+        rewrite to_tx in trade_lt.
+        rewrite <- from_tx in rx_exists.
+        destruct rx_exists as [rx_exists rx_gt0].
+        rewrite <- start_cstate in rx_exists.
+        unfold get_rate in trade_lt.
+        replace (FMap.find (token_in_trade (seq_trade_data t)) (stor_rates (seq_cstate t)))
+        with (Some r_x)
+        in trade_lt.
+        assert (r_x <> 0) as rate_neq_0.
+        {   apply N.neq_0_lt_0.
+            now apply N.gt_lt. }
+        eapply mult_strict_mono; now try exact rate_neq_0. }
+    (* now, the case of t_x -> t_y -> [...] -> t_x *)
+    (* deduce that r_x' delta_x' <= r_y delta_y *)
+    set (r_x' := get_rate t_x (stor_rates (seq_cstate t_last))).
+    set (t_y := token_out_trade (seq_trade_data t_fst)).
+    set (r_y := get_rate t_y (stor_rates (seq_cstate t_fst))).
+    set (delta_y := trade_to_delta_y t_fst).
+    assert (r_x' * delta_x' <= r_y * delta_y)
+    as H_y_x'.
+    {   pose proof (hd_transitive (rev (t :: t0 :: trade_sequence)) trade_to_ry_delta_y t_last lst_txn) 
+        as rev_map_head. 
+        rewrite map_rev in rev_map_head.
+        pose proof (geq_transitive 
+            (map trade_to_ry_delta_y (t :: t0 :: trade_sequence))
+            (trade_to_ry_delta_y t_fst) 
+            (trade_to_ry_delta_y t_last)
+            (hd_transitive (t :: t0 :: trade_sequence) trade_to_ry_delta_y t_fst fst_txn) 
+            rev_map_head
+            H_geq_list)
+        as geq_trans.
+        unfold trade_to_ry_delta_y in geq_trans.
+        unfold r_x', delta_x', r_y, delta_y, t_y.
+        now rewrite <- to_tx. }
+    (* recall r_y delta_y <= r_x' delta_x *)
+    assert (r_y * delta_y <= r_x' * delta_x)
+    as H_x_y.
+    {   destruct rx_exists as [rx_exists rx_gt0].
+        replace (FMap.find t_x (stor_rates cstate))
+        with (FMap.find t_x (stor_rates (seq_cstate t_last)))
+        in rx_exists.
+        unfold r_x', get_rate.
+        replace (FMap.find t_x (stor_rates (seq_cstate t_last)))
+        with (Some r_x).
+        pose proof (trade_upper_bound_2' t_fst) as trade_lemma.
+        cbn in trade_lemma.
+        unfold r_y, delta_y, delta_x.
+        replace r_x 
+        with (get_rate (token_in_trade (seq_trade_data t_fst)) (stor_rates (seq_cstate t_fst))).
+        2:{ unfold get_rate.
+            replace (seq_cstate t_fst) with cstate.
+            replace (token_in_trade (seq_trade_data t_fst)) with t_x.
+            replace (FMap.find t_x (stor_rates cstate)) 
+            with (FMap.find t_x (stor_rates (seq_cstate t_last))).
+            now replace (FMap.find t_x (stor_rates (seq_cstate t_last)))
+            with (Some r_x). }
+        now apply N.lt_le_incl. }
+    (* so r_x' delta_x' <= r_x' delta_x *)
+    pose proof (N.le_trans (r_x' * delta_x') (r_y * delta_y) (r_x' * delta_x) H_y_x' H_x_y)
+    as H_x'_x.
+    (* giving that delta_x' <= delta_x *)
+    assert (r_x' <> 0) as rate_neq_0.
+    {   destruct rx_exists as [rx_exists rx_gt0].
+        replace (FMap.find t_x (stor_rates cstate))
+        with (FMap.find t_x (stor_rates (seq_cstate t_last)))
+        in rx_exists.
+        unfold r_x', get_rate.
+        now replace (FMap.find t_x (stor_rates (seq_cstate t_last)))
+        with (Some r_x). }
+    now eapply mult_strict_mono.
+Qed.
+
+Lemma swap_rate_lemma : forall trade_sequence, 
+    (* if this is a list of successive trades *)
+    are_successive_trades trade_sequence -> 
+    (* then  *)
+    geq_list (map trade_to_ry_delta_y trade_sequence).
+Proof.
+    intros * trades_successive.
+    induction trade_sequence as [| t1 trade_sequence IHtrade_sequence]; auto.
+    assert (forall a l, are_successive_trades (a :: l) -> are_successive_trades l)
+    as successive_iter.
+    {   intros *.
+        destruct l.
+        -   intro.
+            unfold are_successive_trades. 
+            auto.
+        -   intro outer_successive.
+            unfold are_successive_trades in outer_successive.
+            destruct outer_successive as [H_recv [H_qty H_iter]].
+            now unfold are_successive_trades. }
+    apply successive_iter in trades_successive as successive_itered.
+    apply IHtrade_sequence in successive_itered.
+    rewrite map_cons.
+    destruct trade_sequence as [| t2 trade_sequence]; auto.
+    rewrite map_cons.
+    assert (forall a b l, a >= b /\ geq_list (b :: l) -> geq_list (a :: b :: l))
+    as geq_conds.
+    { auto. }
+    apply geq_conds.
+    rewrite map_cons in successive_itered.
+    split; auto.
+    (* some simplifying notation *)
+    set (t_x := token_in_trade (seq_trade_data t1)).
+    set (r_x := get_rate t_x (stor_rates (seq_cstate t1))).
+    set (r_x' := trade_to_rx' t1).
+    set (delta_x := qty_trade (seq_trade_data t1)).
+    set (t_y := token_out_trade (seq_trade_data t1)).
+    set (r_y := get_rate t_y (stor_rates (seq_cstate t1))).
+    set (r_y' := trade_to_rx' t2).
+    set (delta_y := trade_to_delta_y t1).
+    set (t_z := token_out_trade (seq_trade_data t2)).
+    set (r_z := get_rate t_z (stor_rates (seq_cstate t2))).
+    set (delta_z := trade_to_delta_y t2).
+    (* recall r_z * delta_z <= r_y' * delta_y (for t_2) *)
+    assert (r_z * delta_z <= r_y' * delta_y) as le_1.
+    {   pose proof (trade_leq_lemma t2) as trade_leq.
+        cbn in trade_leq.
+        unfold r_z, t_z, delta_z, r_y', t_y, delta_y.
+        cbn in trades_successive. destruct trades_successive as [recv_some [qty_traded [in_out_eq _]]].
+        now rewrite <- qty_traded. }
+    (* recall r_y * delta_y <= r_x' * delta_x (for t_1) *)
+    assert (r_y * delta_y <= r_x' * delta_x) as le_2.
+    {   pose proof (trade_leq_lemma t1) as trade_leq.
+        cbn in trade_leq.
+        unfold r_y, t_y, delta_y, r_x', t_x, delta_x.
+        cbn in trades_successive. destruct trades_successive as [recv_some [qty_traded [in_out_eq _]]].
+        now rewrite <- qty_traded. }
+    (* recall r_y' < r_y *)
+    assert (r_y' < r_y) as rates_decr.
+    {   cbn in trades_successive. 
+        destruct trades_successive as [recv_some [qty_traded [in_out_eq _]]].
+        assert (get_rate t_y (stor_rates (seq_cstate t1)) 
+                = get_rate t_y (stor_rates (seq_cstate t2)))
+        as ry_unchanged_in_t1.
+        {   is_sp_destruct.
+            pose proof (trade_update_rates_formula_pf (seq_cstate t1) (seq_chain t1) (seq_ctx t1) (seq_trade_data t1) (seq_cstate t2)(seq_res_acts t2) recv_some)
+            as rates_change.
+            destruct rates_change as [token_neq [_ rates_unchange]].
+            unfold t_y, get_rate.
+            pose proof (rates_unchange (token_out_trade (seq_trade_data t1)) (not_eq_sym token_neq))
+            as rates_unchange.
+            now replace (FMap.find (token_out_trade (seq_trade_data t1)) (stor_rates (seq_cstate t2)))
+            with (FMap.find (token_out_trade (seq_trade_data t1)) (stor_rates (seq_cstate t1))). }
+        unfold t_y in ry_unchanged_in_t1.
+        rewrite <- in_out_eq in ry_unchanged_in_t1.
+        unfold r_y, r_y', t_y, trade_to_rx'.
+        rewrite <- in_out_eq.
+        rewrite ry_unchanged_in_t1.
+        apply rate_decrease. }
+    (* so r_z * delta_z <= r_y' * delta_y <= r_y * delta_y *)
+    assert (r_y' * delta_y <= r_y * delta_y) as le_mid.
+    {   apply (N.mul_le_mono_nonneg_r r_y' r_y); try exact (N.lt_le_incl r_y' r_y rates_decr).
+        cbn in trades_successive. 
+        destruct trades_successive as [recv_some [qty_traded [in_out_eq _]]].
+        is_sp_destruct.
+        pose proof (trade_amounts_nonnegative_pf (seq_cstate t1) (seq_chain t1) (seq_ctx t1)
+        (seq_trade_data t1) (seq_cstate t2) (seq_res_acts t2) recv_some)
+        as trades_nonneg.
+        destruct trades_nonneg as [_ dy_nonneg].
+        now unfold delta_y, trade_to_delta_y. }
+    assert (r_z * delta_z <= r_y * delta_y) as le_comp.
+    {   apply (N.le_trans (r_z * delta_z) (r_y' * delta_y) (r_y * delta_y) le_1 le_mid). }
+    unfold trade_to_ry_delta_y.
+    unfold r_z, t_z, delta_z, r_y, t_y, delta_y in le_comp.
+    now apply N.le_ge.
+Qed.
+
 Theorem swap_rate_consistency bstate cstate : 
     (* Let t_x be a token with nonzero pooled liquidity and rate r_x > 0 *)
     forall t_x r_x x,
-    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 /\ 
+    FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 -> 
     FMap.find t_x (stor_tokens_held cstate) = Some x /\ x > 0 ->
     (* then for any delta_x > 0 and any sequence of trades, beginning and ending with t_x *)
     forall delta_x (trade_sequence : list trade_sequence_type) t_fst t_last,
@@ -1390,13 +1701,14 @@ Theorem swap_rate_consistency bstate cstate :
     qty_trade (seq_trade_data t_fst) = delta_x -> 
     (* the last trade is to t_x *)
     token_out_trade (seq_trade_data t_last) = t_x -> 
+    FMap.find t_x (stor_rates cstate) = FMap.find t_x (stor_rates (seq_cstate t_last)) ->
     (* delta_x', the output of the last trade, is never larger than delta_x. *)
     let delta_x' := trade_to_delta_y t_last in 
     delta_x' <= delta_x.
 Proof.
-    intros * H_lr * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx trade_delta_x to_tx *.
+    intros * H_rate H_held * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx trade_delta_x to_tx one_tx_txn *.
     unfold delta_x'. rewrite <- trade_delta_x.
-    apply (geq_list_is_sufficient trade_sequence t_fst t_last fst_txn lst_txn).
+    apply (geq_list_is_sufficient trade_sequence t_x t_fst t_last cstate r_x); auto.
     now apply swap_rate_lemma.
 Qed.
 
