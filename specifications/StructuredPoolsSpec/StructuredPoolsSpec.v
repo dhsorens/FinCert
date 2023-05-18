@@ -1,5 +1,35 @@
-(* an abstract structured pools contract *)
+(**
+   This file contains the Specification and Metaspecification of a Structured Pools Contract.
+   
+   It is organized as follows:
 
+   1. Definitions: 
+        - We begin with some auxiliary definitions.
+
+   2. AbstractSpecification: 
+        - We define various propositions which must be true of a contract in order for 
+            it to be a structured pool
+        - We define a predicate `is_structured_pool` on contracts which contains the 
+            propositions constituting the specification.
+
+   3. MetaSpecification:
+        - We define and prove six properties which are true of any contract satisfying 
+          the specification. These include:
+            - Demand Sensitivity
+            - Nonpathological prices
+            - Swap Rate Consistency
+            - Zero-Impact Liquidity Change 
+            - Arbitrage Sensitivity
+            - Pooled Consistency
+        - These are designed to justify the correctness and strength of the specification,
+          hence the name 'metaspecification'
+
+    The specification is designed so that it can be imported into a Coq module, e.g. to 
+    verify a contract correct with respect to this specification, or to reason about 
+    structured pools abstractly, possibly in conjunction with other DeFi contracts.
+*)
+
+From stdpp Require Import decidable.
 From PhD.Specifications.FA2Spec Require FA2Spec.
 From ConCert.Execution Require Import Blockchain.
 From ConCert.Execution Require Import BuildUtils.
@@ -29,10 +59,18 @@ Open Scope string.
  * Defintions:
       We begin with some type and auxiliary type and function definitions which we 
       use for the contract specification.
+
+      The key artefacts here are:
+      - the token type 
+      - the get_bal function
+      - the get_rate function
+
  * ============================================================================= *)
 
 Section Definitions.
-Context {Base : ChainBase}.
+  Context {Base : ChainBase}.
+  Set Primitive Projections.
+  Set Nonrecursive Elimination Schemes.
 
 Definition error : Type := N.
 
@@ -49,21 +87,93 @@ Definition error : Type := N.
 
     End ErrorCodes.
 
-Definition token : Type := FA2Spec.token. (* token_address and token_id fields *)
+Record token := {
+    token_address : Address;
+    token_id : N
+  }.
+
+    (* begin hide *)
+    Section STDPPInstances.
+    Global Instance token_eq_dec : base.EqDecision token.
+    Proof.
+        unfold EqDecision, Decision.
+        decide equality.
+        - apply N.eq_dec.
+        - apply address_eqdec.
+    Defined.
+    Global Program Instance token_countable : countable.Countable token :=
+        countable.inj_countable' (fun t => (token_address t, token_id t)) 
+            (fun x => let (a, i) := x in Build_token a i) _.
+    
+    Declare Scope token_scope.
+    Notation "x =? y" := (if token_eq_dec x y then true else false)
+          (at level 70) : token_scope.
+  End STDPPInstances.
+  (* end hide *)
+
+
 Definition exchange_rate := N.
 
-Definition token_eq_dec (t1 t2 : token) : { t1 = t2 } + { t1 <> t2 }.
-Proof.
-    decide equality.
-    - apply N.eq_dec.
-    - apply address_eqdec.
-Defined.
+Record transfer_to := {
+    to_ : Address;
+    transfer_token_id : N;
+    amount : N
+}.
 
-Definition transfer_to := FA2Spec.transfer_to.
-Definition transfer_data := FA2Spec.transfer_data.
+Record transfer_data := {
+    from_ : Address;
+    txs : list transfer_to
+}.
 
-Definition mint_data := FA2Spec.mint_data.
-Definition mint := FA2Spec.mint.
+Record mint_data := {
+    mint_owner : Address;
+    mint_token_id : N;
+    qty : N
+  }.
+Definition mint : Type := list mint_data.
+
+  (* begin hide *)
+  Section Serialization.
+    Global Instance transfer_to_serializable : Serializable transfer_to :=
+      Derive Serializable transfer_to_rect <Build_transfer_to>.
+
+    Global Instance transfer_data_serializable : Serializable transfer_data :=
+      Derive Serializable transfer_data_rect <Build_transfer_data>.
+
+    Global Instance mint_data_serializable : Serializable mint_data :=
+      Derive Serializable mint_data_rect <Build_mint_data>.
+  End Serialization.
+  (* end hide *)
+    
+(* a function to get a balance from an FMap *)
+Definition get_bal (t : token) (tokens_held : FMap token N) := 
+    match FMap.find t tokens_held with | Some b => b | None => 0 end.
+
+(* the same function, but named differently for the sake of clarity *)
+Definition get_rate (t : token) (rates : FMap token N) : N :=
+    match FMap.find t rates with | Some r => r | None => 0 end.
+
+End Definitions.
+
+Section AbstractSpecification.
+Context {Base : ChainBase}
+
+(* =============================================================================
+ * The Contract Specification `is_structured_pool` :
+      We detail a list of propositions of a contract's behavior which must be 
+      proven true of a given contract for it to be a correct structured pool contract.
+ * ============================================================================= *)
+
+    { Setup Msg State Error : Type }
+    { other_entrypoint : Type }
+    `{Serializable Setup}  `{Serializable Msg}  `{Serializable State} `{Serializable Error}.
+
+(** Specification of the Msg type:
+  - A Pool entrypoint, whose interface is defined by the pool_data type
+  - An Unpool entrypoint, whose interface is defined by the unpool_data type
+  - A Trade entrypoint, whose interface is defined by the trade_data type
+  - Possibly other types
+*)
 
 Record pool_data := {
     token_pooled : token ;
@@ -81,37 +191,7 @@ Record trade_data := {
     qty_trade : N ; (* the qty of token_in going in *)
 }.
 
-(* a function to get a balance from an FMap *)
-Definition get_bal (t : token) (tokens_held : FMap token N) := 
-    match FMap.find t tokens_held with | Some b => b | None => 0 end.
-
-(* the same function, but named differently for the sake of clarity *)
-Definition get_rate (t : token) (rates : FMap token N) : N :=
-    match FMap.find t rates with | Some r => r | None => 0 end.
-
-End Definitions.
-
-(* the abstract specification *)
-Section AbstractSpecification.
-Context {Base : ChainBase}
-
-(* =============================================================================
- * The Contract Specification `is_structured_pool` :
-      We detail a list of propositions of a contract's behavior which can be 
-      proven true of a given contract.
- * ============================================================================= *)
-
-    { Setup Msg State Error : Type }
-    { other_entrypoint : Type }
-    `{Serializable Setup}  `{Serializable Msg}  `{Serializable State} `{Serializable Error}.
-
-(* Specification of the Msg type:
-  - A Pool entrypoint, whose interface is defined by the pool_data type
-  - An Unpool entrypoint, whose interface is defined by the unpool_data type
-  - A Trade entrypoint, whose interface is defined by the trade_data type
-  - Possibly other types
-*)
-
+(* The Msg typeclass *)
 Class Msg_Spec (T : Type) := 
   build_msg_spec {
     pool : pool_data -> T ;
@@ -121,8 +201,8 @@ Class Msg_Spec (T : Type) :=
     other : other_entrypoint -> option T ;
 }.
 
-(* specification of the State type:
-  - keeps track of:
+(** Specification of the State type:
+  The contract state keeps track of:
     - the exchange rates
     - tokens held
     - pool token address
@@ -140,8 +220,8 @@ Class State_Spec (T : Type) :=
       stor_outstanding_tokens : T -> N ;
   }.
 
-(* specification of the Setup type 
-  to initialize the contract, we need:
+(** Specification of the Setup type:
+  To initialize the contract, we need:
     - the initial rates
     - the pool token
 *)
@@ -176,7 +256,9 @@ Definition msg_destruct (contract : Contract Setup Msg State Error) : Prop :=
     (exists t, m = trade t) \/
     (exists o, Some m = other o).
 
-(* Specification of the POOL entrypoint *)
+
+(** Specification of the POOL entrypoint *)
+
 (* A call to the DEPOSIT entrypoint fails if the token to be pooled is not in the 
     rates map held in the storage (=> is not in T) *)
 Definition pool_entrypoint_check (contract : Contract Setup Msg State Error) : Prop :=
@@ -207,7 +289,7 @@ Definition pool_emits_txns (contract : Contract Setup Msg State Error) : Prop :=
     (* there is a transfer call *)
     let transfer_call := (act_call 
         (* calls the pooled token address *)
-        (msg_payload.(token_pooled).(FA2Spec.token_address)) 
+        (msg_payload.(token_pooled).(token_address)) 
         (* with amount 0 *)
         0
         (* and payload transfer_payload *)
@@ -221,7 +303,7 @@ Definition pool_emits_txns (contract : Contract Setup Msg State Error) : Prop :=
     (* there is a mint call in acts *)
     let mint_call := (act_call 
         (* calls the pool token contract *)
-        (stor_pool_token cstate).(FA2Spec.token_address) 
+        (stor_pool_token cstate).(token_address) 
         (* with amount 0 *)
         0 
         (* and payload mint_payload *)
@@ -272,7 +354,8 @@ Definition pool_outstanding (contract : Contract Setup Msg State Error) : Prop :
     stor_outstanding_tokens cstate' = 
     stor_outstanding_tokens cstate + rate_in * qty.
 
-(* Specification of the UNPOOL entrypoint *)
+
+(** Specification of the UNPOOL entrypoint *)
 
 (* We assume an inverse rate function *)
 Context { calc_rx_inv : forall (r_x : N) (q : N), N }.
@@ -316,7 +399,7 @@ Definition unpool_emits_txns (contract : Contract Setup Msg State Error) : Prop 
     (* there is a burn call in acts *)
     let burn_call := (act_call
         (* calls the pool token address *)
-        (stor_pool_token cstate).(FA2Spec.token_address)
+        (stor_pool_token cstate).(token_address)
         (* with amount 0 *)
         0
         (* with payload burn_payload *)
@@ -330,7 +413,7 @@ Definition unpool_emits_txns (contract : Contract Setup Msg State Error) : Prop 
     (* there is a transfer call *)
     let transfer_call := (act_call 
         (* call to the token address *)
-        (msg_payload.(token_unpooled).(FA2Spec.token_address))
+        (msg_payload.(token_unpooled).(token_address))
         (* with amount = 0 *)
         0 
         (* with payload transfer_payload *)
@@ -373,6 +456,7 @@ Definition unpool_rates_unchanged (contract : Contract Setup Msg State Error) : 
     forall t,
     FMap.find t (stor_rates cstate) = FMap.find t (stor_rates cstate').
 
+(* Defines how the UNPOOL entrypoint updates outstanding tokens *)
 Definition unpool_outstanding (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx msg_payload acts,
     (* the call to DEPOSIT was successful *)
@@ -406,8 +490,8 @@ Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) 
     (FMap.find msg_payload.(token_in_trade) (stor_rates cstate) = Some r_x) /\
     (FMap.find msg_payload.(token_out_trade) (stor_rates cstate) = Some r_y)).
 
-(* A successful call to TRADE means that token_in_trade and token_out_trade have exchange 
-    rates (=> are in T) *)
+(* A successful call to TRADE means that the inputs to the trade calculation are 
+    all positive *)
 Definition trade_entrypoint_check_3 (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate chain ctx msg_payload cstate' acts,
     (* a successful call *)
@@ -508,7 +592,7 @@ Definition trade_emits_transfers (contract : Contract Setup Msg State Error) : P
     (* there is a transfer call for t_x *)
     let transfer_tx := (act_call 
         (* call to the correct token address *)
-        (msg_payload.(token_in_trade).(FA2Spec.token_address))
+        (msg_payload.(token_in_trade).(token_address))
         (* with amount = 0 *)
         0
         (* and payload transfer_payload_x *)
@@ -523,7 +607,7 @@ Definition trade_emits_transfers (contract : Contract Setup Msg State Error) : P
     (* there is a transfer call for t_y *)
     let transfer_ty := (act_call 
         (* call to the correct token address *)
-        (msg_payload.(token_out_trade).(FA2Spec.token_address))
+        (msg_payload.(token_out_trade).(token_address))
         (* with amount = 0 *)
         0 
         (* and payload transfer_payload_y *)
@@ -638,7 +722,7 @@ Definition other_outstanding_unchanged (contract : Contract Setup Msg State Erro
     (* balances all stay the same *)
     (stor_outstanding_tokens cstate) = (stor_outstanding_tokens cstate').
 
-(* Specification of calc_rx' and calc_delta_y *)
+(** Specification of the functions calc_rx' and calc_delta_y *)
 
 (* update_rate function returns positive number if the num, denom are positive *)
 Definition update_rate_stays_positive := 
@@ -653,13 +737,12 @@ Definition rate_decrease :=
     let r_x' := calc_rx' r_x r_y delta_x k x in 
     r_x' <= r_x.
 
-(* rates balance appropriately when tokens are unpooled *)
+(* the inverse rate function is a right inverse of r_x *)
 Definition rates_balance := 
     forall q t rates prev_state, 
     let r_x := get_rate t rates in 
     let x := get_bal t (stor_tokens_held prev_state) in 
-    r_x * (x - calc_rx_inv r_x q) = 
-    r_x * x - q.
+    r_x * calc_rx_inv r_x q = q.
 
 Definition rates_balance_2 := 
     forall t prev_state,
@@ -746,7 +829,9 @@ Definition initialized_with_pool_token (contract : Contract Setup Msg State Erro
     (* then the pool token is the same as given in the setup *)
     (stor_pool_token cstate) = (init_pool_token setup).
 
-(* we amalgamate each proposition in the specification into a single proposition *)
+
+(** We amalgamate each proposition in the specification into a single proposition,
+    to form the structured pools predicate on contracts *)
 Definition is_structured_pool
     (C : Contract Setup Msg State Error) : Prop := 
     none_fails C /\
@@ -864,7 +949,8 @@ Context {contract : Contract Setup Msg State Error}
         { is_sp : is_structured_pool contract }.
 
 
-(* Demand Sensitivity :
+(** Demand Sensitivity :
+
     A trade for a given token increases its price relative to other constituent tokens, 
     so that higher relative demand corresponds to a higher relative price. 
     Likewise, trading one token in for another decreases the first's relative price in 
@@ -875,7 +961,7 @@ Context {contract : Contract Setup Msg State Error}
 *)
 
 (* x decreases relative to z as x => x', z => z' :
-    z - x < z' - x' *)
+    z - x <= z' - x' *)
 Definition rel_decr (x z x' z' : N) := 
     ((Z.of_N z) - (Z.of_N x) <= (Z.of_N z') - (Z.of_N x'))%Z.
 
@@ -889,7 +975,7 @@ Proof.
 Qed.
 
 (* y increases relative to x as y => y', x => x' : 
-    y - x < y' - x' *)
+    y - x <= y' - x' *)
 Definition rel_incr (y x y' x' : N) := 
     ((Z.of_N y) - (Z.of_N x) <= (Z.of_N y') - (Z.of_N x'))%Z.
 
@@ -901,6 +987,11 @@ Proof.
     unfold rel_incr.
     lia.
 Qed.
+
+(** Theorem (Demand Sensitivity):
+    Let t_x and t_y, t_x \neq t_y, be tokens in our family with nonzero pooled liquidity and exchange rates r_x, r_y > 0.
+    In a trade t_x to t_y, as r_x is updated to r_x', it decereases relative to r_z for all t_z \neq t_x, and r_y strictly increases relative to r_x.
+*)
 
 Theorem demand_sensitivity cstate :
     (* For all tokens t_x t_y, rates r_x r_y, and quantities x and y, where *)
@@ -1006,15 +1097,21 @@ Proof.
         exact rx_change.
 Qed.
 
-(* Nonpathological prices 
-    As relative prices shift over time, a price that starts out nonzero never goes to 
-    zero or to a negative value. 
+(** Nonpathological prices 
+    
+    As relative prices shift in response to trading activity, a price that starts out nonzero never goes to zero or to a negative value. 
 
-    This is to avoid pathological behavior of zero or negative prices. 
+    This is to avoid pathological behavior of zero or negative prices.
 
     Note, however, that prices can still get arbitrarily close to zero, like in the case 
     of CPMMs.
 *)
+
+(** Theorem (Nonpathological Prices):
+    For a token t_x in T, if there is a contract state such that r_x > 0, 
+    then r_x > 0 holds for all future states of the contract.
+*)
+
 
 Theorem nonpathological_prices bstate caddr :
     (* reachable state with contract at caddr *)
@@ -1226,16 +1323,10 @@ Proof.
 Qed.
 
 
-(* Swap rate consistency : 
-    For tokens tau_x, tau_y and tau_z, the exchange rate from tau_x to tau_y, and then to 
-    tau_z, must not be greater than the exchange rate from tau_x to token tau_z. 
-
-    As we will see, structured pools always price trades consistently, but because of how 
-    prices update over time it is nontrivial to show that this is true in practice.
+(** Swap rate consistency : 
+    For a token t_x in T and for any delta_x > 0, there is no sequence of trades, beginning and ending with t_x, such that delta_x' > delta_x, where delta_x' is the output quantity of the sequence of trades.
     
-    In particular, price consistency means that it is never profitable to trade in a loop, 
-    e.g. tau_x to tau_y, and back to tau_x, which is important so that there are no 
-    arbitrage oportunities internal to the pool.
+    Swap rate consistency means that it is never profitable to trade in a loop, e.g. t_x to t_y, and back to t_x, which is important so that there are never any opportunities for arbitrage internal to the pool.
 *)
 
 (* Some results on successive trades *)
@@ -1679,6 +1770,12 @@ Proof.
     now apply N.le_ge.
 Qed.
 
+(** Theorem (Swap Rate Consistency): 
+    Let t_x be a token in our family with nonzero pooled liquidity and r_x > 0.
+    Then for any delta_x > 0 there is no sequence of trades, beginning and ending with 
+    t_x, such that delta_x' > delta_x, where delta_x' is the output quantity 
+    of the sequence of trades.
+*)
 
 Theorem swap_rate_consistency bstate cstate : 
     (* Let t_x be a token with nonzero pooled liquidity and rate r_x > 0 *)
@@ -1713,8 +1810,12 @@ Proof.
 Qed.
 
 
-(* Zero-Impact Liquidity Change :
-    The quoted price of trades is unaffected by calling DEPOSIT and WITHDRAW 
+(** Zero-Impact Liquidity Change :
+    The quoted price of trades is unaffected by depositing or withdrawing liquidity
+*)
+
+(** Theorem (Zero-Impact Liquidity Change)
+    The quoted price of trades is unaffected by calling `pool` and `unpool`.
 *)
 Theorem zero_impact_liquidity_change :
     (* Consider the quoted price of a trade t_x to t_y at cstate, *)
@@ -1794,13 +1895,23 @@ Proof.
         now rewrite rx_eq, ry_eq.
 Qed.
 
-(* Arbitrage sensitivity :
-    If an opportunity for arbitrage exists due to some external market pricing a 
-    constituent token differently from the structured pool, the arbitrage loop can be 
-    closed with one sufficiently large transaction.
+(** Arbitrage Sensitivity :
+
+    If an external, demand-sensitive market prices a constituent token differently from 
+    the structured pool, a sufficiently large arbitrage transaction will equalize 
+    the prices of the external market and the structured pool, or deplete the pool.
 
     In our case, this happens because prices adapt through trades due to demand 
     sensitivity or the pool depletes in that particular token.
+*)
+
+
+(** Theorem (Arbitrage Sensitivity):
+    Let t_x be a token in our family with nonzero pooled liquidity and r_x > 0.
+    If an external, demand-sensitive market prices t_x differently from the structured pool, 
+    then assuming sufficient liquidity,  with a sufficiently large transaction either the 
+    price of t_x in the structured pool converges with the external market, or the trade 
+    depletes the pool of t_x.
 *)
 Theorem arbitrage_sensitivity :
     forall cstate t_x r_x x,
@@ -1925,10 +2036,13 @@ Proof.
 Qed.
 
 
-(* Pooled consistency 
-    The sum of all the constituent, pooled tokens, multiplied by their value in terms of 
-    pooled tokens, always equals the total number of outstanding pool tokens. That is, 
-    pool tokens are never under- or over-collateralized. 
+(* Pooled Consistency:
+    The number of outstanding pool tokens is equal to the value, in pool tokens, of all 
+    constituent tokens held by the contract.
+
+    Mathematically, the sum of all the constituent, pooled tokens, multiplied by their value in terms of pooled tokens, always equals the total number of outstanding pool tokens. 
+
+    This means that the pool token is never under- or over-collateralized, and is similar to standard AMMs, where the LP token is always fully backed, representing a percentage of the liquidity pool.
 *)
 
 (* map over the keys *)
@@ -2194,6 +2308,11 @@ Proof.
     -   rewrite IHPermutation1.  
         now rewrite IHPermutation2.
 Qed.
+
+(** Theorem (Pooled Consistency):
+    The following equation always holds: 
+        Sum_{t_x} r_x x = k
+*)
 
 Theorem pooled_consistency bstate caddr :
     reachable bstate -> 
@@ -2516,7 +2635,11 @@ Proof.
                 {   unfold tokens_to_values_new, tokens_to_values_prev.
                     (* get the calculation from the specification *)
                     rewrite bal_update.
-                    apply rates_balance_pf. }
+                    rewrite (N.mul_sub_distr_l
+                        (get_bal (token_unpooled u) (stor_tokens_held prev_state))
+                        (calc_rx_inv (get_rate (token_unpooled u) (stor_rates prev_state)) (qty_unpooled u))
+                        (get_rate (token_unpooled u) (stor_rates prev_state))).
+                    now rewrite rates_balance_pf. }
                 rewrite new_key_eq.
                 
                 (* this is an additional condition required here so that commutativity applies *)
@@ -3224,7 +3347,11 @@ Proof.
                 {   unfold tokens_to_values_new, tokens_to_values_prev.
                     (* get the calculation from the specification *)
                     rewrite bal_update.
-                    apply rates_balance_pf. }
+                    rewrite (N.mul_sub_distr_l
+                        (get_bal (token_unpooled u) (stor_tokens_held prev_state))
+                        (calc_rx_inv (get_rate (token_unpooled u) (stor_rates prev_state)) (qty_unpooled u))
+                        (get_rate (token_unpooled u) (stor_rates prev_state))).
+                    now rewrite rates_balance_pf. }
                 rewrite new_key_eq.
                 
                 (* this is an additional condition required here so that commutativity applies *)
