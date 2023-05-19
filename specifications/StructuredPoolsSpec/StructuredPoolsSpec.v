@@ -248,7 +248,7 @@ Definition none_fails (contract : Contract Setup Msg State Error) : Prop :=
     exists err : Error, 
     receive contract chain ctx cstate None = Err err.
 
-(* We also assume that the Msg type is fully characterized by its typeclass *)
+(* We also specify that the Msg type is fully characterized by its typeclass *)
 Definition msg_destruct (contract : Contract Setup Msg State Error) : Prop :=
     forall (m : Msg),
     (exists p, m = pool p) \/
@@ -259,18 +259,8 @@ Definition msg_destruct (contract : Contract Setup Msg State Error) : Prop :=
 
 (** Specification of the POOL entrypoint *)
 
-(* A call to the DEPOSIT entrypoint fails if the token to be pooled is not in the 
-    rates map held in the storage (=> is not in T) *)
+(* A successful call to POOL means that token_pooled has an exchange rate (=> is in T) *)
 Definition pool_entrypoint_check (contract : Contract Setup Msg State Error) : Prop :=
-    forall cstate chain ctx msg_payload,
-    (* If there is no entry in the rates map for the token to be pooled, *)
-    FMap.find msg_payload.(token_pooled) (stor_rates cstate) = None -> 
-    (* the transaction fails. *)
-    receive contract chain ctx cstate (Some (pool (msg_payload))) = 
-      Err(error_to_Error error_TOKEN_NOT_FOUND).
-
-(* A successful call to DEPOSIT means that token_pooled has an exchange rate (=> is in T) *)
-Definition pool_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate cstate' chain ctx msg_payload acts,
     (* a successful call *)
     receive contract chain ctx cstate (Some (pool (msg_payload))) = Ok(cstate', acts) -> 
@@ -278,11 +268,11 @@ Definition pool_entrypoint_check_2 (contract : Contract Setup Msg State Error) :
     exists r_x, 
     FMap.find msg_payload.(token_pooled) (stor_rates cstate) = Some r_x.
 
-(* When the DEPOSIT entrypoint is successfully called, it emits a TRANSFER call to the 
+(* When the POOL entrypoint is successfully called, it emits a TRANSFER call to the 
     token in storage, with q tokens in the payload of the call *)
 Definition pool_emits_txns (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate chain ctx msg_payload cstate' acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (pool (msg_payload))) = Ok(cstate', acts) -> 
     (* in the acts list there is a transfer call with q tokens as the payload *)
     exists transfer_to transfer_data transfer_payload mint_data mint_payload,
@@ -318,10 +308,10 @@ Definition pool_emits_txns (contract : Contract Setup Msg State Error) : Prop :=
     (acts = [ transfer_call ; mint_call ] \/
     acts = [ mint_call ; transfer_call ]).
 
-(* When the DEPOSIT entrypoint is successfully called, tokens_held goes up appropriately *)
+(* When the POOL entrypoint is successfully called, tokens_held goes up appropriately *)
 Definition pool_increases_tokens_held (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate chain ctx msg_payload cstate' acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
     (* in cstate', tokens_held has increased at token *)
     let token := msg_payload.(token_pooled) in
@@ -337,7 +327,7 @@ Definition pool_increases_tokens_held (contract : Contract Setup Msg State Error
 (* And the rates don't change *)
 Definition pool_rates_unchanged (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx msg_payload acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
     (* rates all stay the same *)
     forall t,
@@ -346,7 +336,7 @@ Definition pool_rates_unchanged (contract : Contract Setup Msg State Error) : Pr
 (* The outstanding tokens change appropriately *)
 Definition pool_outstanding (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx msg_payload acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (pool msg_payload)) = Ok(cstate', acts) -> 
     (* rates all stay the same *)
     let rate_in := get_rate msg_payload.(token_pooled) (stor_rates cstate) in 
@@ -360,19 +350,8 @@ Definition pool_outstanding (contract : Contract Setup Msg State Error) : Prop :
 (* We assume an inverse rate function *)
 Context { calc_rx_inv : forall (r_x : N) (q : N), N }.
 
-(* A call to the WITHDRAW entrypoint fails if the token to be unpooled is not in the 
-    rates map held in the storage (=> is not in T) *)
+(* A successful call to UNPOOL means that token_pooled has an exchange rate (=> is in T) *)
 Definition unpool_entrypoint_check (contract : Contract Setup Msg State Error) : Prop :=
-    forall cstate chain ctx msg_payload,
-    (* If there is no entry in the rates map for the token to be unpooled, *)
-    FMap.find msg_payload.(token_unpooled) (stor_rates cstate) = None -> 
-    (* the transaction fails. *)
-    receive contract chain ctx cstate (Some (unpool (msg_payload))) = 
-      Err(error_to_Error error_TOKEN_NOT_FOUND).
-
-
-(* A successful call to WITHDRAW means that token_pooled has an exchange rate (=> is in T) *)
-Definition unpool_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate cstate' chain ctx msg_payload acts,
     (* a successful call *)
     receive contract chain ctx cstate (Some (unpool (msg_payload))) = Ok(cstate', acts) -> 
@@ -380,19 +359,19 @@ Definition unpool_entrypoint_check_2 (contract : Contract Setup Msg State Error)
     exists r_x,
     FMap.find msg_payload.(token_unpooled) (stor_rates cstate) = Some r_x.
 
-Definition unpool_entrypoint_check_3 (contract : Contract Setup Msg State Error) : Prop :=
+Definition unpool_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate cstate' chain ctx msg_payload acts,
     (* a successful call *)
     receive contract chain ctx cstate (Some (unpool (msg_payload))) = Ok(cstate', acts) -> 
-    (* an exchange rate exists *)
+    (* we don't unpool more than we have in reserves *)
     qty_unpooled msg_payload <=
     get_rate (token_unpooled msg_payload) (stor_rates cstate) * get_bal (token_unpooled msg_payload) (stor_tokens_held cstate).
 
-(* When the WITHDRAW entrypoint is successfully called, it emits a BURN call to the 
+(* When the UNPOOL entrypoint is successfully called, it emits a BURN call to the 
     pool_token, with q in the payload *)
 Definition unpool_emits_txns (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate chain ctx msg_payload cstate' acts,
-    (* the call to WITHDRAW was successful *)
+    (* the call to UNPOOL was successful *)
     receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
     (* in the acts list there are burn and transfer transactions *)
     exists burn_data burn_payload transfer_to transfer_data transfer_payload,
@@ -433,7 +412,7 @@ Definition unpool_emits_txns (contract : Contract Setup Msg State Error) : Prop 
 (* When the UNPOOL entrypoint is successfully called, tokens_held goes down appropriately *)
 Definition unpool_decreases_tokens_held (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate chain ctx msg_payload cstate' acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
     (* in cstate', tokens_held has increased at token *)
     let token := msg_payload.(token_unpooled) in
@@ -450,7 +429,7 @@ Definition unpool_decreases_tokens_held (contract : Contract Setup Msg State Err
 (* When the UNPOOL entrypoint is successfully called, tokens_held goes down appropriately *)
 Definition unpool_rates_unchanged (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx msg_payload acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
     (* rates all stay the same *)
     forall t,
@@ -459,7 +438,7 @@ Definition unpool_rates_unchanged (contract : Contract Setup Msg State Error) : 
 (* Defines how the UNPOOL entrypoint updates outstanding tokens *)
 Definition unpool_outstanding (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx msg_payload acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (Some (unpool msg_payload)) = Ok(cstate', acts) -> 
     (* rates all stay the same *)
     let rate_in := get_rate msg_payload.(token_unpooled) (stor_rates cstate) in 
@@ -467,20 +446,9 @@ Definition unpool_outstanding (contract : Contract Setup Msg State Error) : Prop
     stor_outstanding_tokens cstate' = 
     stor_outstanding_tokens cstate - qty.
 
-(* A call to the TRADE entrypoint fails if either the token to be traded in or the token 
-    to be traded out is not in the rates map held in the storage (=> is not in T) *)
-Definition trade_entrypoint_check (contract : Contract Setup Msg State Error) : Prop :=
-    forall cstate chain ctx msg_payload,
-    (* If there is no entry in the rates map for either token in the trade, *)
-    ((FMap.find msg_payload.(token_in_trade) (stor_rates cstate) = None) \/
-     (FMap.find msg_payload.(token_out_trade) (stor_rates cstate) = None)) ->
-    (* the transaction fails. *)
-    receive contract chain ctx cstate (Some (trade (msg_payload))) = 
-      Err(error_to_Error error_TOKEN_NOT_FOUND).
-
 (* A successful call to TRADE means that token_in_trade and token_out_trade have exchange 
     rates (=> are in T) *)
-Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
+Definition trade_entrypoint_check (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate chain ctx msg_payload cstate' acts,
     (* a successful call *)
     receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
@@ -492,7 +460,7 @@ Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) 
 
 (* A successful call to TRADE means that the inputs to the trade calculation are 
     all positive *)
-Definition trade_entrypoint_check_3 (contract : Contract Setup Msg State Error) : Prop :=
+Definition trade_entrypoint_check_2 (contract : Contract Setup Msg State Error) : Prop :=
     forall cstate chain ctx msg_payload cstate' acts,
     (* a successful call *)
     receive contract chain ctx cstate (Some (trade (msg_payload))) = Ok(cstate', acts) -> 
@@ -701,7 +669,7 @@ Definition trade_amounts_nonnegative (contract : Contract Setup Msg State Error)
 (* Specification of all other entrypoints *)
 Definition other_rates_unchanged (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx o acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (other o) = Ok(cstate', acts) -> 
     (* rates all stay the same *)
     forall t,
@@ -709,7 +677,7 @@ Definition other_rates_unchanged (contract : Contract Setup Msg State Error) : P
 
 Definition other_balances_unchanged (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx o acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (other o) = Ok(cstate', acts) -> 
     (* balances all stay the same *)
     forall t, 
@@ -717,7 +685,7 @@ Definition other_balances_unchanged (contract : Contract Setup Msg State Error) 
 
 Definition other_outstanding_unchanged (contract : Contract Setup Msg State Error) : Prop := 
     forall cstate cstate' chain ctx o acts,
-    (* the call to DEPOSIT was successful *)
+    (* the call to POOL was successful *)
     receive contract chain ctx cstate (other o) = Ok(cstate', acts) -> 
     (* balances all stay the same *)
     (stor_outstanding_tokens cstate) = (stor_outstanding_tokens cstate').
@@ -838,7 +806,6 @@ Definition is_structured_pool
     msg_destruct C /\
     (* pool entrypoint specification *)
     pool_entrypoint_check C /\
-    pool_entrypoint_check_2 C /\
     pool_emits_txns C /\
     pool_increases_tokens_held C /\
     pool_rates_unchanged C /\
@@ -846,7 +813,6 @@ Definition is_structured_pool
     (* unpool entrypoint specification *)
     unpool_entrypoint_check C /\
     unpool_entrypoint_check_2 C /\
-    unpool_entrypoint_check_3 C /\
     unpool_emits_txns C /\
     unpool_decreases_tokens_held C /\
     unpool_rates_unchanged C /\
@@ -854,7 +820,6 @@ Definition is_structured_pool
     (* trade entrypoint specification *)
     trade_entrypoint_check C /\
     trade_entrypoint_check_2 C /\
-    trade_entrypoint_check_3 C /\
     trade_pricing_formula C /\
     trade_update_rates C /\
     trade_update_rates_formula C /\
@@ -892,7 +857,6 @@ Tactic Notation "is_sp_destruct" :=
         destruct is_sp' as [msg_destruct_pf is_sp'];
         (* isolate the pool entrypoint specification *)
         destruct is_sp' as [pool_entrypoint_check_pf is_sp'];
-        destruct is_sp' as [pool_entrypoint_check_2_pf is_sp'];
         destruct is_sp' as [pool_emits_txns_pf is_sp'];
         destruct is_sp' as [pool_increases_tokens_held_pf is_sp'];
         destruct is_sp' as [pool_rates_unchanged_pf is_sp'];
@@ -900,7 +864,6 @@ Tactic Notation "is_sp_destruct" :=
         (* isolate the unpool entrypoint specification *)
         destruct is_sp' as [unpool_entrypoint_check_pf is_sp'];
         destruct is_sp' as [unpool_entrypoint_check_2_pf is_sp'];
-        destruct is_sp' as [unpool_entrypoint_check_3_pf is_sp'];
         destruct is_sp' as [unpool_emits_txns_pf is_sp'];
         destruct is_sp' as [unpool_decreases_tokens_held_pf is_sp'];
         destruct is_sp' as [unpool_rates_unchanged_pf is_sp'];
@@ -908,7 +871,6 @@ Tactic Notation "is_sp_destruct" :=
         (* isolate the trade entrypoint specification *)
         destruct is_sp' as [trade_entrypoint_check_pf is_sp'];
         destruct is_sp' as [trade_entrypoint_check_2_pf is_sp'];
-        destruct is_sp' as [trade_entrypoint_check_3_pf is_sp'];
         destruct is_sp' as [trade_pricing_formula_pf is_sp'];
         destruct is_sp' as [trade_update_rates_pf is_sp'];
         destruct is_sp' as [trade_update_rates_formula_pf is_sp'];
@@ -1041,7 +1003,7 @@ Proof.
     {   intros.
         is_sp_destruct.
         rewrite msg_is_trade in successful_txn.
-        pose proof (trade_entrypoint_check_2_pf cstate chain ctx msg_payload
+        pose proof (trade_entrypoint_check_pf cstate chain ctx msg_payload
                 cstate' acts successful_txn)
         as token_in_qty.
         do 3 destruct token_in_qty as [* token_in_qty].
@@ -1099,7 +1061,8 @@ Qed.
 
 (** Nonpathological prices 
     
-    As relative prices shift in response to trading activity, a price that starts out nonzero never goes to zero or to a negative value. 
+    As relative prices shift in response to trading activity, a price that starts out nonzero 
+    never goes to zero or to a negative value. 
 
     This is to avoid pathological behavior of zero or negative prices.
 
@@ -1111,7 +1074,6 @@ Qed.
     For a token t_x in T, if there is a contract state such that r_x > 0, 
     then r_x > 0 holds for all future states of the contract.
 *)
-
 
 Theorem nonpathological_prices bstate caddr :
     (* reachable state with contract at caddr *)
@@ -1177,7 +1139,7 @@ Proof.
                 (* we need to get r_x from prev_state *)
                 assert (exists prev_rx, FMap.find t_x (stor_rates prev_state) = Some prev_rx)
                 as exists_prevrx.
-                {   pose proof (trade_entrypoint_check_2_pf prev_state chain ctx t 
+                {   pose proof (trade_entrypoint_check_pf prev_state chain ctx t 
                         new_state new_acts receive_some)
                     as prev_rate_lem.
                     do 3 destruct prev_rate_lem as [* prev_rate_lem].
@@ -1268,7 +1230,7 @@ Proof.
                 (* we need to get r_x from prev_state *)
                 assert (exists prev_rx, FMap.find t_x (stor_rates prev_state) = Some prev_rx)
                 as exists_prevrx.
-                {   pose proof (trade_entrypoint_check_2_pf prev_state chain ctx t 
+                {   pose proof (trade_entrypoint_check_pf prev_state chain ctx t 
                         new_state new_acts receive_some)
                     as prev_rate_lem.
                     do 3 destruct prev_rate_lem as [* prev_rate_lem].
@@ -1324,9 +1286,13 @@ Qed.
 
 
 (** Swap rate consistency : 
-    For a token t_x in T and for any delta_x > 0, there is no sequence of trades, beginning and ending with t_x, such that delta_x' > delta_x, where delta_x' is the output quantity of the sequence of trades.
+    For a token t_x in T and for any delta_x > 0, there is no sequence of trades, beginning and 
+    ending with t_x, such that delta_x' > delta_x, where delta_x' is the output quantity of the 
+    sequence of trades.
     
-    Swap rate consistency means that it is never profitable to trade in a loop, e.g. t_x to t_y, and back to t_x, which is important so that there are never any opportunities for arbitrage internal to the pool.
+    Swap rate consistency means that it is never profitable to trade in a loop, e.g. t_x to t_y, 
+    and back to t_x, which is important so that there are never any opportunities for arbitrage 
+    internal to the pool.
 *)
 
 (* Some results on successive trades *)
@@ -1823,7 +1789,7 @@ Theorem zero_impact_liquidity_change :
     FMap.find t_x (stor_rates cstate) = Some r_x ->
     FMap.find t_y (stor_rates cstate) = Some r_y ->
     let quoted_price := r_x / r_y in 
-    (* and a successful DEPOSIT or WITHDRAW action. *)
+    (* and a successful POOL or UNPOOL action. *)
     forall chain ctx msg payload_pool payload_unpool acts cstate' r_x' r_y',
         receive contract chain ctx cstate (Some msg) = Ok(cstate', acts) ->
         msg = pool payload_pool \/
@@ -1992,10 +1958,10 @@ Proof.
         (* the strategy is to buy low (internally), sell high (externally) *)
         set (t_y := token_out_trade msg_payload).
         rewrite msg_is_trade in successful_trade.
-        destruct (trade_entrypoint_check_2_pf cstate chain ctx msg_payload cstate' 
+        destruct (trade_entrypoint_check_pf cstate chain ctx msg_payload cstate' 
         acts successful_trade) as [y [_ [r_y [bal_y [_ rate_y]]]]].
         destruct liquidity as [rate_x [rx_gt_0 [bal_x bal_gt_0]]].
-        destruct (trade_entrypoint_check_3_pf cstate chain ctx msg_payload cstate' 
+        destruct (trade_entrypoint_check_2_pf cstate chain ctx msg_payload cstate' 
         acts successful_trade)
         as [x0 [rx0 [ry0 [k0 [is_x [is_rx [is_ry [is_k gt0]]]]]]]].
         replace (FMap.find (token_out_trade msg_payload) (stor_rates cstate)) 
@@ -2040,9 +2006,12 @@ Qed.
     The number of outstanding pool tokens is equal to the value, in pool tokens, of all 
     constituent tokens held by the contract.
 
-    Mathematically, the sum of all the constituent, pooled tokens, multiplied by their value in terms of pooled tokens, always equals the total number of outstanding pool tokens. 
+    Mathematically, the sum of all the constituent, pooled tokens, multiplied by their value in 
+    terms of pooled tokens, always equals the total number of outstanding pool tokens. 
 
-    This means that the pool token is never under- or over-collateralized, and is similar to standard AMMs, where the LP token is always fully backed, representing a percentage of the liquidity pool.
+    This means that the pool token is never under- or over-collateralized, and is similar to 
+    standard AMMs, where the LP token is always fully backed, representing a percentage of the 
+    liquidity pool.
 *)
 
 (* map over the keys *)
@@ -2098,7 +2067,7 @@ Proof.
     destruct (trade_update_rates_formula_pf prev_state chain ctx t new_state new_acts receive_some) as [tokens_neq update_rates_formula].
     destruct update_rates_formula as [old_rate_in other_rates_unchanged].
     (* ... *)
-    pose proof (trade_entrypoint_check_2_pf prev_state
+    pose proof (trade_entrypoint_check_pf prev_state
     chain ctx t new_state new_acts receive_some) 
     as trade_check.
     do 3 destruct trade_check as [* trade_check].
@@ -2321,8 +2290,7 @@ Theorem pooled_consistency bstate caddr :
     contract_state bstate caddr = Some cstate /\
     (* The sum of all the constituent, pooled tokens, multiplied by their value in terms 
     of pooled tokens, always equals the total number of outstanding pool tokens. *)
-    suml (tokens_to_values (stor_rates cstate) (stor_tokens_held cstate)) = 
-        (stor_outstanding_tokens cstate).
+    suml (tokens_to_values (stor_rates cstate) (stor_tokens_held cstate)) = (stor_outstanding_tokens cstate).
 Proof.
     contract_induction; intros; try exact IH.
     is_sp_destruct.
@@ -2379,9 +2347,12 @@ Proof.
             as separate_sum.
             {   unfold tokens_to_values.
                 (* some simplifying notation *)
-                set (keys_minus_p := (remove token_eq_dec (token_pooled p) (FMap.keys (stor_rates prev_state)))).
-                set (tokens_to_values_new := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state)).
-                set (tokens_to_values_prev := fun (k : token) => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)).
+                set (keys_minus_p := (remove token_eq_dec (token_pooled p) 
+                    (FMap.keys (stor_rates prev_state)))).
+                set (tokens_to_values_new := fun k : token => 
+                    get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state)).
+                set (tokens_to_values_prev := fun (k : token) => 
+                    get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)).
                 (* 1. show there's a Permutation with (token_pooled p) at the front *)
                 assert (Permutation
                     (FMap.keys (stor_rates prev_state)) 
@@ -2389,7 +2360,8 @@ Proof.
                 as keys_permuted.
                 {   unfold keys_minus_p.
                     (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
-                    destruct (pool_entrypoint_check_2_pf prev_state new_state chain ctx p new_acts receive_some) as [r_x rate_exists_el].
+                    destruct (pool_entrypoint_check_pf prev_state new_state chain 
+                    ctx p new_acts receive_some) as [r_x rate_exists_el].
                     apply FMap.In_elements in rate_exists_el.
                     pose proof (in_map fst
                         (FMap.elements (stor_rates prev_state))
@@ -2516,20 +2488,26 @@ Proof.
                     tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state))
             as rates_unchanged.
             {   unfold tokens_to_values.
-                rewrite (token_keys_invariant_unpool u new_state new_acts prev_state ctx chain receive_some).
+                rewrite (token_keys_invariant_unpool u new_state new_acts prev_state ctx 
+                chain receive_some).
                 apply map_ext.
                 intro t.
                 unfold get_rate. 
                 now rewrite rates_update. }
             rewrite rates_unchanged. clear rates_unchanged.
             (* now separate the sum *)
-            assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) = suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held prev_state)) - qty_unpooled u)
+            assert (suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held new_state)) 
+            = suml (tokens_to_values (stor_rates prev_state) (stor_tokens_held prev_state)) - 
+            qty_unpooled u)
             as separate_sum.
             {   unfold tokens_to_values.
                 (* some simplifying notation *)
-                set (keys_minus_u := (remove token_eq_dec (token_unpooled u) (FMap.keys (stor_rates prev_state)))).
-                set (tokens_to_values_new := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state)).
-                set (tokens_to_values_prev := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)).
+                set (keys_minus_u := (remove token_eq_dec (token_unpooled u) 
+                    (FMap.keys (stor_rates prev_state)))).
+                set (tokens_to_values_new := fun k : token => 
+                    get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held new_state)).
+                set (tokens_to_values_prev := fun k : token => 
+                    get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)).
                 (* 1. show there's a Permutation with (token_pooled p) at the front *)
                 assert (Permutation
                     (FMap.keys (stor_rates prev_state)) 
@@ -2537,7 +2515,8 @@ Proof.
                 as keys_permuted.
                 {   unfold keys_minus_u.
                     (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
-                    destruct (unpool_entrypoint_check_2_pf prev_state new_state chain ctx u new_acts receive_some) as [r_x rate_exists_el].
+                    destruct (unpool_entrypoint_check_pf prev_state new_state chain ctx u 
+                    new_acts receive_some) as [r_x rate_exists_el].
                     apply FMap.In_elements in rate_exists_el.
                     pose proof (in_map fst
                         (FMap.elements (stor_rates prev_state))
@@ -2637,16 +2616,15 @@ Proof.
                     rewrite bal_update.
                     rewrite (N.mul_sub_distr_l
                         (get_bal (token_unpooled u) (stor_tokens_held prev_state))
-                        (calc_rx_inv (get_rate (token_unpooled u) (stor_rates prev_state)) (qty_unpooled u))
-                        (get_rate (token_unpooled u) (stor_rates prev_state))).
+                        (calc_rx_inv (get_rate (token_unpooled u) (stor_rates prev_state)) 
+                        (qty_unpooled u)) (get_rate (token_unpooled u) (stor_rates prev_state))).
                     now rewrite rates_balance_pf. }
                 rewrite new_key_eq.
                 
                 (* this is an additional condition required here so that commutativity applies *)
                 assert (qty_unpooled u <= tokens_to_values_prev (token_unpooled u))
                 as unpooled_leq. {
-                    unfold tokens_to_values_prev.
-                    exact (unpool_entrypoint_check_3_pf prev_state new_state chain ctx u new_acts receive_some). }
+                    now unfold tokens_to_values_prev. }
                 now rewrite (N.add_sub_swap 
                     (tokens_to_values_prev (token_unpooled u))
                     (suml (map tokens_to_values_prev keys_minus_u))
@@ -2670,13 +2648,17 @@ Proof.
             rewrite out_update.
             clear out_update.
             
-            (* LHS equals sum over tokens except for tx and ty, plus r_x' * etc , minus r_y * delta_y *)
+            (* LHS equals sum over tokens except for tx and ty, plus r_x' * etc , 
+            minus r_y * delta_y *)
             
             (* some notation *)
             unfold tokens_to_values.
-            set (keys_minus_trade_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))).
-            set (keys_minus_trades := (remove token_eq_dec (token_out_trade t) keys_minus_trade_in)).
-            set (tokens_to_values_new := fun k : token => get_rate k (stor_rates new_state) * get_bal k (stor_tokens_held new_state)).
+            set (keys_minus_trade_in := 
+                (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))).
+            set (keys_minus_trades := 
+                (remove token_eq_dec (token_out_trade t) keys_minus_trade_in)).
+            set (tokens_to_values_new := fun k : token => 
+                get_rate k (stor_rates new_state) * get_bal k (stor_tokens_held new_state)).
             
             (* LHS *)
             (* permute FMap.keys (stor_tokens_held new_state) to have tx :: ty :: keys' *)
@@ -2697,13 +2679,16 @@ Proof.
                         (FMap.keys (stor_rates new_state))
                         token_eq_dec
                         (FMap.NoDup_keys (stor_rates new_state))).
-                    assert (exists x, FMap.find (token_in_trade t) (stor_rates new_state) = Some x) as rate_exists.
-                    {   destruct (trade_update_rates_pf prev_state chain ctx t new_state new_acts receive_some) as [_ update_rates].
+                    assert (exists x, FMap.find (token_in_trade t) (stor_rates new_state) 
+                    = Some x) as rate_exists.
+                    {   destruct (trade_update_rates_pf prev_state chain ctx t new_state 
+                        new_acts receive_some) as [_ update_rates].
                         simpl in update_rates.
                         rewrite update_rates.
                         set (x := (calc_rx' (get_rate (token_in_trade t) (stor_rates prev_state))
                         (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t)
-                        (stor_outstanding_tokens prev_state) (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
+                        (stor_outstanding_tokens prev_state) (get_bal (token_in_trade t) 
+                        (stor_tokens_held prev_state)))).
                         exists x.
                         apply FMap.find_add. }
                     destruct rate_exists as [x rate_exists].
@@ -2731,11 +2716,14 @@ Proof.
                     as permute_step_1. 
                     {   assert (Permutation
                             (token_in_trade t
-                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state))))
+                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec 
+                            (token_in_trade t) (FMap.keys (stor_rates new_state))))
                             (remove token_eq_dec (token_out_trade t)
-                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))))
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                            (FMap.keys (stor_rates new_state)))))
                         as inner_permute.
-                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state)))).
+                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) 
+                            (FMap.keys (stor_rates new_state)))).
                             rewrite remove_permute; try assumption.
                             apply Permutation_refl. }
                         exact (perm_skip (token_out_trade t) inner_permute). }
@@ -2758,9 +2746,10 @@ Proof.
                             apply in_in_remove.
                             +   now apply not_eq_sym.
                             +   assert (exists x, 
-                                    FMap.find (token_out_trade t) (stor_rates new_state) = Some x) 
+                                    FMap.find (token_out_trade t) (stor_rates new_state) 
+                                    = Some x) 
                                 as rate_exists. 
-                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                {   pose proof (trade_entrypoint_check_pf prev_state
                                     chain ctx t new_state new_acts receive_some) 
                                     as trade_check.
                                     (* get rate from prev_state *)
@@ -2769,7 +2758,8 @@ Proof.
                                     destruct trade_check as [_ prev_rate].
                                     clear x x0.
                                     (* get the rate from the new state *)
-                                    rewrite <- (rz_unchanged (token_out_trade t) (not_eq_sym tx_neq_ty)) in prev_rate.
+                                    rewrite <- (rz_unchanged (token_out_trade t) 
+                                    (not_eq_sym tx_neq_ty)) in prev_rate.
                                     now exists x1. }
                                 destruct rate_exists as [x rate_exists].
                                 apply FMap.In_elements in rate_exists.
@@ -2781,7 +2771,8 @@ Proof.
                     (Permutation_trans permute_2
                         (perm_swap (token_in_trade t) (token_out_trade t)
                         (remove token_eq_dec (token_out_trade t)
-                        (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates new_state))))))). }
+                        (remove token_eq_dec (token_in_trade t) 
+                        (FMap.keys (stor_rates new_state))))))). }
             (* Now separate LHS into ^^, plus new rate * t_x, minus rate * t_y *)
             pose proof 
                 (Permutation_map tokens_to_values_new)
@@ -2795,7 +2786,8 @@ Proof.
             (* now that we have that permutation, we can decompose the suml *)
             rewrite (suml_permute_commutes
                 (map tokens_to_values_new (FMap.keys (stor_rates new_state)))
-                (map tokens_to_values_new ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades))
+                (map tokens_to_values_new 
+                    ((token_in_trade t) :: (token_out_trade t) :: keys_minus_trades))
                 lhs_permute_map).
             (* now extract (token_in_trade t) and (token_out_trade t) *)
             rewrite (map_extract 
@@ -2811,9 +2803,13 @@ Proof.
 
             (* permute FMap.keys for the OLD suml to MANIPULATE the inductive hypothesis IH *)
             unfold tokens_to_values in IH.
-            set (keys_minus_trade_in_prev := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))).
-            set (keys_minus_trades_prev := (remove token_eq_dec (token_out_trade t) keys_minus_trade_in_prev)).
-            set (tokens_to_values_prev := fun k : token => get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)) in IH.
+            set (keys_minus_trade_in_prev := 
+                (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))).
+            set (keys_minus_trades_prev := 
+                (remove token_eq_dec (token_out_trade t) keys_minus_trade_in_prev)).
+            set (tokens_to_values_prev := fun k : token => 
+                get_rate k (stor_rates prev_state) * get_bal k (stor_tokens_held prev_state)) 
+            in IH.
 
             assert (Permutation
                 (FMap.keys (stor_rates prev_state)) 
@@ -2831,8 +2827,9 @@ Proof.
                         (FMap.keys (stor_rates prev_state))
                         token_eq_dec
                         (FMap.NoDup_keys (stor_rates prev_state))).
-                    assert (exists x, FMap.find (token_in_trade t) (stor_rates prev_state) = Some x) as rate_exists.
-                    {   pose proof (trade_entrypoint_check_2_pf prev_state
+                    assert (exists x, FMap.find (token_in_trade t) (stor_rates prev_state) 
+                    = Some x) as rate_exists.
+                    {   pose proof (trade_entrypoint_check_pf prev_state
                             chain ctx t new_state new_acts receive_some) 
                         as trade_check.
                         do 3 destruct trade_check as [* trade_check].
@@ -2865,11 +2862,14 @@ Proof.
                     as permute_step_1. 
                     {   assert (Permutation
                             (token_in_trade t
-                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state))))
+                            :: remove token_eq_dec (token_out_trade t) (remove token_eq_dec 
+                            (token_in_trade t) (FMap.keys (stor_rates prev_state))))
                             (remove token_eq_dec (token_out_trade t)
-                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))))
+                            (token_in_trade t :: remove token_eq_dec (token_in_trade t) 
+                            (FMap.keys (stor_rates prev_state)))))
                         as inner_permute.
-                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) (FMap.keys (stor_rates prev_state)))).
+                        {   set (rates_remove_in := (remove token_eq_dec (token_in_trade t) 
+                            (FMap.keys (stor_rates prev_state)))).
                             rewrite remove_permute; try assumption.
                             apply Permutation_refl. }
                         exact (perm_skip (token_out_trade t) inner_permute). }
@@ -2894,7 +2894,7 @@ Proof.
                             +   assert (exists x, 
                                     FMap.find (token_out_trade t) (stor_rates prev_state) = Some x) 
                                 as rate_exists. 
-                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                {   pose proof (trade_entrypoint_check_pf prev_state
                                         chain ctx t new_state new_acts receive_some) 
                                     as trade_check.
                                     do 3 destruct trade_check as [* trade_check].
@@ -2995,7 +2995,7 @@ Proof.
                 (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
                 assert (exists x', FMap.find (token_in_trade t) (stor_rates prev_state) = Some x')
                 as prev_x.
-                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                {   pose proof (trade_entrypoint_check_pf prev_state
                         chain ctx t new_state new_acts receive_some) 
                     as trade_check.
                     do 3 destruct trade_check as [* trade_check].
@@ -3099,7 +3099,7 @@ Proof.
                 as keys_permuted.
                 {   unfold keys_minus_p.
                     (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
-                    pose proof (pool_entrypoint_check_2_pf prev_state new_state chain ctx p new_acts receive_some) as rate_exists.
+                    pose proof (pool_entrypoint_check_pf prev_state new_state chain ctx p new_acts receive_some) as rate_exists.
                     destruct rate_exists as [r_x rate_exists_el].
                     apply FMap.In_elements in rate_exists_el.
                     pose proof (in_map fst
@@ -3248,7 +3248,7 @@ Proof.
                 as keys_permuted.
                 {   unfold keys_minus_u.
                     (* In (token_pooled p) (FMap.keys (stor_rates prev_state)) *)
-                    pose proof (unpool_entrypoint_check_2_pf prev_state new_state chain ctx u new_acts receive_some) as rate_exists.
+                    pose proof (unpool_entrypoint_check_pf prev_state new_state chain ctx u new_acts receive_some) as rate_exists.
                     destruct rate_exists as [r_x rate_exists_el].
                     apply FMap.In_elements in rate_exists_el.
                     pose proof (in_map fst
@@ -3358,7 +3358,7 @@ Proof.
                 assert (qty_unpooled u <= tokens_to_values_prev (token_unpooled u))
                 as unpooled_leq. {
                     unfold tokens_to_values_prev.
-                    exact (unpool_entrypoint_check_3_pf prev_state new_state chain ctx u new_acts receive_some). }
+                    exact (unpool_entrypoint_check_2_pf prev_state new_state chain ctx u new_acts receive_some). }
                 now rewrite (N.add_sub_swap 
                     (tokens_to_values_prev (token_unpooled u))
                     (suml (map tokens_to_values_prev keys_minus_u))
@@ -3470,7 +3470,7 @@ Proof.
                             +   assert (exists x, 
                                     FMap.find (token_out_trade t) (stor_rates new_state) = Some x) 
                                 as rate_exists. 
-                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                {   pose proof (trade_entrypoint_check_pf prev_state
                                     chain ctx t new_state new_acts receive_some) 
                                     as trade_check.
                                     (* get rate from prev_state *)
@@ -3542,7 +3542,7 @@ Proof.
                         token_eq_dec
                         (FMap.NoDup_keys (stor_rates prev_state))).
                     assert (exists x, FMap.find (token_in_trade t) (stor_rates prev_state) = Some x) as rate_exists.
-                    {   pose proof (trade_entrypoint_check_2_pf prev_state
+                    {   pose proof (trade_entrypoint_check_pf prev_state
                             chain ctx t new_state new_acts receive_some) 
                         as trade_check.
                         do 3 destruct trade_check as [* trade_check].
@@ -3604,7 +3604,7 @@ Proof.
                             +   assert (exists x, 
                                     FMap.find (token_out_trade t) (stor_rates prev_state) = Some x) 
                                 as rate_exists. 
-                                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                                {   pose proof (trade_entrypoint_check_pf prev_state
                                         chain ctx t new_state new_acts receive_some) 
                                     as trade_check.
                                     do 3 destruct trade_check as [* trade_check].
@@ -3710,7 +3710,7 @@ Proof.
                 (get_bal (token_in_trade t) (stor_tokens_held prev_state)))).
                 assert (exists x', FMap.find (token_in_trade t) (stor_rates prev_state) = Some x')
                 as prev_x.
-                {   pose proof (trade_entrypoint_check_2_pf prev_state
+                {   pose proof (trade_entrypoint_check_pf prev_state
                         chain ctx t new_state new_acts receive_some) 
                     as trade_check.
                     do 3 destruct trade_check as [* trade_check].
