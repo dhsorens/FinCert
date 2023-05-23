@@ -33,6 +33,8 @@ The Coq Proof Assistant, version 8.16.0
 compiled with OCaml 4.14.0
 ```
 
+For VSCode users, `VSCoq` seems to work well as a plugin with which to step through proofs.
+
 ## Organization 
 
 * the `specifications` folder houses various formalized specifications, including of structured pools, token contracts, and AMMs
