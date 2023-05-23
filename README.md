@@ -20,12 +20,7 @@ Clone the repository with the `--recursive` tag so that you include the submodul
 git clone git@github.com:differentialderek/phd-thesis.git --recursive
 ```
 
-Go into the `phd-thesis-ConCert/` subdirectory, my fork of the ConCert codebase, and type `make`.
-The first time you do this, this will take a little while.
-```
-cd phd-thesis-ConCert/
-make
-```
+Go into the `phd-thesis-ConCert/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](phd-thesis-ConCert/README.md).
 
 Now go back to the root `phd-thesis/` directory, and make the Coq project.
 ```
@@ -33,7 +28,7 @@ cd ../
 make
 ```
 
-This definitely compiles on MacOS with these versions:
+This should compile on MacOS with (at least) these versions:
 ```
 The Coq Proof Assistant, version 8.16.0
 compiled with OCaml 4.14.0
