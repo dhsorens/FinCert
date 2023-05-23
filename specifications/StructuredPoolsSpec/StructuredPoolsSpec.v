@@ -10,7 +10,8 @@
         - We define various propositions which must be true of a contract in order for 
             it to be a structured pool
         - We define a predicate `is_structured_pool` on contracts which contains the 
-            propositions constituting the specification.
+            propositions constituting the specification
+        - Ends with `is_structured_pool` predicate and `is_sp_destruct` tactic
 
    3. MetaSpecification:
         - We define and prove six properties which are true of any contract satisfying 
