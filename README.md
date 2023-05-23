@@ -24,7 +24,6 @@ Go into the `phd-thesis-ConCert/` subdirectory, my fork of the ConCert codebase,
 
 Now go back to the root `phd-thesis/` directory, and make the Coq project.
 ```
-cd ../
 make
 ```
 
