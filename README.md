@@ -20,7 +20,7 @@ Clone the repository with the `--recursive` tag so that you include the submodul
 git clone git@github.com:differentialderek/phd-thesis.git --recursive
 ```
 
-Go into the `phd-thesis-ConCert/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](phd-thesis-ConCert/README.md).
+Go into the `phd-thesis-ConCert/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](phd-thesis-ConCert/).
 
 Now go back to the root `phd-thesis/` directory, and make the Coq project.
 ```
