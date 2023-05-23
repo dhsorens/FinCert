@@ -35,7 +35,7 @@ make
 
 This definitely compiles on MacOS with these versions:
 ```
-The Coq Proof Assistant, version 8.15.1
+The Coq Proof Assistant, version 8.16.0
 compiled with OCaml 4.14.0
 ```
 
