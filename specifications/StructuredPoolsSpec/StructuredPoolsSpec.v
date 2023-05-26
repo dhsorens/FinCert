@@ -1368,23 +1368,23 @@ Fixpoint are_successive_trades (trade_sequence : list trade_sequence_type) : Pro
         end
     end.
 
-Fixpoint leq_list (l : list N) : Prop := 
+Fixpoint is_increasing_list (l : list N) : Prop := 
     match l with 
     | [] => True 
     | h :: tl => 
         match tl with 
         | [] => True 
-        | h' :: tl' => (h <= h') /\ leq_list tl 
+        | h' :: tl' => (h <= h') /\ is_increasing_list tl 
         end 
     end.
 
-Fixpoint geq_list (l : list N) : Prop := 
+Fixpoint is_decreasing_list (l : list N) : Prop := 
     match l with 
     | [] => True 
     | h :: tl => 
         match tl with 
         | [] => True 
-        | h' :: tl' => (h >= h') /\ geq_list tl 
+        | h' :: tl' => (h >= h') /\ is_decreasing_list tl 
         end 
     end.
 
@@ -1397,32 +1397,32 @@ Proof.
 Qed.
 
 Lemma geq_cons : forall a l,
-    geq_list (a :: l) -> 
-    geq_list l.
+    is_decreasing_list (a :: l) -> 
+    is_decreasing_list l.
 Proof.
     intros * H_geq.
     destruct l as [| a' l]; auto.
-    unfold geq_list in *.
+    unfold is_decreasing_list in *.
     now destruct H_geq as [geq ind_l].
 Qed.
 
 Lemma geq_app : forall l l',
-    geq_list (l ++ l') -> 
-    geq_list l /\ geq_list l'.
+    is_decreasing_list (l ++ l') -> 
+    is_decreasing_list l /\ is_decreasing_list l'.
 Proof.
     intros * H_geq.
     split.
     -   induction l.
-        +   now unfold geq_list.
+        +   now unfold is_decreasing_list.
         +   rewrite <- app_comm_cons in H_geq.
             pose proof (IHl (geq_cons a (l ++ l') H_geq)) as geq_l.
-            unfold geq_list.
+            unfold is_decreasing_list.
             destruct l; auto.
-            unfold geq_list in geq_l.
+            unfold is_decreasing_list in geq_l.
             split; try assumption.
             clear geq_l.
             rewrite <- app_comm_cons in H_geq.
-            unfold geq_list in H_geq.
+            unfold is_decreasing_list in H_geq.
             now destruct H_geq as [g_geq_n _].
     -   induction l; auto.
         rewrite <- app_comm_cons in H_geq.
@@ -1430,13 +1430,13 @@ Proof.
 Qed.
 
 Lemma geq_cons_remove_simpl : forall a a' l, 
-    geq_list (a :: a' :: l) -> 
-    geq_list (a :: l).
+    is_decreasing_list (a :: a' :: l) -> 
+    is_decreasing_list (a :: l).
 Proof.
     intros * H_geq.
     destruct l as [| a'' l].
-    -   now unfold geq_list.
-    -   unfold geq_list in *.
+    -   now unfold is_decreasing_list.
+    -   unfold is_decreasing_list in *.
         destruct H_geq as [a_geq_a' [a'_geq_a'' H_geq]].
         split; auto.
         apply N.ge_le in a_geq_a', a'_geq_a''.
@@ -1461,10 +1461,10 @@ Qed.
 Lemma geq_transitive : forall l fst lst,
     hd_error l = Some fst -> 
     hd_error (rev l) = Some lst -> 
-    geq_list l -> 
+    is_decreasing_list l -> 
     lst <= fst.
 Proof.
-    intros * hd_fst tl_lst H_geq_list.
+    intros * hd_fst tl_lst H_is_decreasing_list.
     destruct l as [| a l]; try rewrite hd_error_nil in *; try discriminate.
     pose proof (list_decompose l) as l_decompose.
     destruct l_decompose as [one_txn | l_decompose].
@@ -1483,8 +1483,8 @@ Proof.
         (* by induction on l' *)
         induction l'.
         +   rewrite app_nil_l in *.
-            unfold geq_list in H_geq_list.
-            destruct H_geq_list as [qeg _].
+            unfold is_decreasing_list in H_is_decreasing_list.
+            destruct H_is_decreasing_list as [qeg _].
             apply (N.ge_le a b) in qeg.
             now rewrite <- a_fst, <- b_lst.
         +   apply IHl'.
@@ -1492,8 +1492,8 @@ Proof.
                 rewrite rev_unit.
                 rewrite <- app_comm_cons.
                 now simpl.
-            *   rewrite <- app_comm_cons in H_geq_list.
-                now apply geq_cons_remove_simpl in H_geq_list.
+            *   rewrite <- app_comm_cons in H_is_decreasing_list.
+                now apply geq_cons_remove_simpl in H_is_decreasing_list.
 Qed.
 
 Definition trade_to_ry_delta_y (t : trade_sequence_type) := 
@@ -1520,7 +1520,7 @@ Proof.
     now rewrite a_eq_fst.
 Qed.
 
-Lemma geq_list_is_sufficient : forall trade_sequence t_x t_fst t_last cstate r_x, 
+Lemma is_decreasing_list_is_sufficient : forall trade_sequence t_x t_fst t_last cstate r_x, 
     (* more assumptions *)
     (hd_error trade_sequence) = Some t_fst ->
     (hd_error (rev trade_sequence)) = Some t_last ->
@@ -1530,12 +1530,12 @@ Lemma geq_list_is_sufficient : forall trade_sequence t_x t_fst t_last cstate r_x
     FMap.find t_x (stor_rates cstate) = Some r_x /\ r_x > 0 ->
     FMap.find t_x (stor_rates cstate) = FMap.find t_x (stor_rates (seq_cstate t_last)) ->
     (* the statement *)
-    geq_list (map trade_to_ry_delta_y trade_sequence) ->
+    is_decreasing_list (map trade_to_ry_delta_y trade_sequence) ->
     let delta_x := qty_trade (seq_trade_data t_fst) in 
     let delta_x' := trade_to_delta_y t_last in 
     delta_x' <= delta_x.
 Proof.
-    intros * fst_txn lst_txn from_tx to_tx start_cstate rx_exists one_tx_txn H_geq_list *.
+    intros * fst_txn lst_txn from_tx to_tx start_cstate rx_exists one_tx_txn H_is_decreasing_list *.
     is_sp_destruct.
     (* a lemma *)
     assert (forall t,
@@ -1590,7 +1590,7 @@ Proof.
             (trade_to_ry_delta_y t_last)
             (hd_transitive (t :: t0 :: trade_sequence) trade_to_ry_delta_y t_fst fst_txn) 
             rev_map_head
-            H_geq_list)
+            H_is_decreasing_list)
         as geq_trans.
         unfold trade_to_ry_delta_y in geq_trans.
         unfold r_x', delta_x', r_y, delta_y, t_y.
@@ -1637,7 +1637,7 @@ Lemma swap_rate_lemma : forall trade_sequence,
     (* if this is a list of successive trades *)
     are_successive_trades trade_sequence -> 
     (* then  *)
-    geq_list (map trade_to_ry_delta_y trade_sequence).
+    is_decreasing_list (map trade_to_ry_delta_y trade_sequence).
 Proof.
     intros * trades_successive.
     induction trade_sequence as [| t1 trade_sequence IHtrade_sequence]; auto.
@@ -1657,7 +1657,7 @@ Proof.
     rewrite map_cons.
     destruct trade_sequence as [| t2 trade_sequence]; auto.
     rewrite map_cons.
-    assert (forall a b l, a >= b /\ geq_list (b :: l) -> geq_list (a :: b :: l))
+    assert (forall a b l, a >= b /\ is_decreasing_list (b :: l) -> is_decreasing_list (a :: b :: l))
     as geq_conds.
     { auto. }
     apply geq_conds.
@@ -1779,7 +1779,7 @@ Theorem swap_rate_consistency bstate cstate :
 Proof.
     intros * H_rate H_held * dx_geq_0 trades_successive fst_txn lst_txn start_bstate start_cstate from_tx trade_delta_x to_tx one_tx_txn *.
     unfold delta_x'. rewrite <- trade_delta_x.
-    apply (geq_list_is_sufficient trade_sequence t_x t_fst t_last cstate r_x); auto.
+    apply (is_decreasing_list_is_sufficient trade_sequence t_x t_fst t_last cstate r_x); auto.
     now apply swap_rate_lemma.
 Qed.
 
