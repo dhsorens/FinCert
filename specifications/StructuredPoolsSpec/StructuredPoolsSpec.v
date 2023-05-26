@@ -691,7 +691,14 @@ Definition other_outstanding_unchanged (contract : Contract Setup Msg State Erro
     (* balances all stay the same *)
     (stor_outstanding_tokens cstate) = (stor_outstanding_tokens cstate').
 
-(** Specification of the functions calc_rx' and calc_delta_y *)
+(** Specification of the functions calc_rx' and calc_delta_y
+    - This specification distils the features of trading along a convex curve which are 
+      relevant to the correct functioning of structured pools.
+    - While these are supposed to be nontrivial functions that simulate trading along 
+      a convex curve, `calc_rx'`, `calc_delta_y`, and `calc_rx_inv` can be made trivial 
+      by setting all rates to 1, setting the first function to the identity function, 
+      the second to multiplication by r_x = 1, and the third to division by r_x = 1
+*)
 
 (* update_rate function returns positive number if the num, denom are positive *)
 Definition update_rate_stays_positive := 
@@ -850,7 +857,7 @@ Definition is_structured_pool
     initialized_with_pool_token C.
 
 (* A tactic to destruct is_sp if it's in the context of a proof *)
-Tactic Notation "is_sp_destruct" := 
+Ltac is_sp_destruct := 
     match goal with 
     | is_sp : is_structured_pool _ |- _ => 
         unfold is_structured_pool in is_sp;
