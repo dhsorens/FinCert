@@ -1,3 +1,3 @@
-[submodule "phd-thesis-ConCert"]
-	path = phd-thesis-ConCert
-	url = https://github.com/differentialderek/phd-thesis-ConCert
+[submodule "FinCert-ConCert-fork"]
+	path = FinCert-ConCert-fork
+	url = https://github.com/differentialderek/FinCert-ConCert-fork.git
