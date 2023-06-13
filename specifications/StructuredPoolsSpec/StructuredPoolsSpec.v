@@ -31,7 +31,7 @@
 *)
 
 From stdpp Require Import decidable.
-From PhD.Specifications.FA2Spec Require FA2Spec.
+From FinCert.Specifications.FA2Spec Require FA2Spec.
 From ConCert.Execution Require Import Blockchain.
 From ConCert.Execution Require Import BuildUtils.
 From ConCert.Execution Require Import Containers.

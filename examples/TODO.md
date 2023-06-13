@@ -5,12 +5,12 @@ TODOs:
 - [x] bug fix:
     - [x] documentation
 - [ ] optimizing:
-    - [x] finish theorems 
-    - [x] documentation
+    - [ ] finish theorems 
+    - [ ] documentation
 - [ ] specify upgrade:
     - [ ] create a concrete example and implement it to show rounding error of a calculation as part of a specification
 - [ ] transport Hoare:
-    - [x] subtle issue to resolve of the pullback 
+    - [ ] subtle issue to resolve of the pullback 
     - [ ] needs lifting 
 - [ ] upgradeable:
     - [x] the injection 

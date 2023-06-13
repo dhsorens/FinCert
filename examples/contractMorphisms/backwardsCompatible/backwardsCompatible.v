@@ -88,28 +88,27 @@ Definition error_morph : error -> error := id.
 
 (* the coherence results *)
 Lemma init_coherence : forall c ctx s, 
-    (init_result_transform state_morph error_morph) ((Blockchain.init C) c ctx s) = 
-    (Blockchain.init C') c ctx (setup_morph s).
+    result_functor state_morph error_morph (init c ctx s) = 
+    init c ctx (setup_morph s).
 Proof. auto. Qed.
 
 Lemma recv_coherence : forall c ctx st op_msg, 
-    (recv_result_transform state_morph error_morph) ((Blockchain.receive C) c ctx st op_msg) = 
-    (Blockchain.receive C') c ctx (state_morph st) (option_map msg_morph op_msg).
+    result_functor (fun '(st, l) => (state_morph st, l)) error_morph (receive c ctx st op_msg) = 
+    receive' c ctx (state_morph st) (option_map msg_morph op_msg).
 Proof.
-    intros. cbn. unfold recv_result_transform.
-    unfold msg_morph. unfold state_morph. unfold error_morph.
-    cbn. induction op_msg; cbn; auto.
-    destruct a. auto.
+    intros. 
+    unfold result_functor, msg_morph, state_morph, error_morph.
+    induction op_msg; auto.
+    now destruct a.
 Qed.
-
 
 (* construct the morphism *)
 Definition f : ContractMorphism C C' := 
-    simple_cm msg_morph setup_morph state_morph error_morph init_coherence recv_coherence.
+    build_contract_morphism C C' setup_morph msg_morph state_morph error_morph init_coherence recv_coherence.
 
 
-(* this theorem shows a strong notion of backwards compatibility because there is an embedding of the old contract into the new *)
-Theorem embedding : is_inj_cm f. 
+(* this theorem shows a strong notion of backwards compatibility because there is an embedding of the old contract into the new 
+Theorem embedding : is_inj_cm f.
 Proof.
     unfold is_inj_cm; unfold is_inj. 
     repeat split; intros.
@@ -117,7 +116,7 @@ Proof.
         cbn in H. unfold setup_morph in H. cbn in H.
         exact H.
     -   destruct a, a'; cbn in H.
-        +   unfold state_morph in H. auto.   
+        +   unfold state_morph in H.
         +   unfold state_morph, error_morph in H. cbn in H. inversion H.
         +   unfold error_morph, state_morph in H. cbn in H. inversion H.
         +   unfold error_morph in H. cbn in H. auto.
@@ -133,19 +132,23 @@ Proof.
         +   inversion H.
         +   inversion H. 
             f_equal.
-    -   destruct a, a'.
-        +   destruct t, t0.
-            cbn in H. unfold state_morph in H. simpl in H. 
-            exact H.
-        +   destruct t.
-            cbn in H. unfold state_morph, error_morph in H. simpl in H.
-            inversion H.
-        +   destruct t.
-            cbn in H. unfold error_morph, state_morph in H.
-            inversion H.   
-        +   cbn in H. unfold error_morph in H. simpl in H.
-            exact H.
+    -   destruct a, a'; try now destruct t.
+        +   now destruct t, t0.
+        +   now cbn in H.
 Qed.
+*)
+
+
+
+(** THEOREM: 
+    all reachable states have a corresponding reachable state, related by the *injection*. *)
+Theorem injection_invariant bstate caddr :
+    (* Forall reachable states with contract C at caddr, *)
+    reachable bstate -> 
+    env_contracts bstate caddr = Some (C : WeakContract) ->
+    (* there's a corresponding reachable state with C' *)
+    (* related by the injection *)
+    True.
+Admitted.
 
 End BackwardsCompatible.
-

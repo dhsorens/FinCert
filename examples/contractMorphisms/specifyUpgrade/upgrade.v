@@ -99,8 +99,6 @@ Context { calculate_trade_precise : N -> N }
         calculate_trade (round_down n) }.
 
 (** Suppose also that we have a round-down function on the storage type. *)
-Context { state_morph : storage -> storage }
-    { state_rounds_down : forall st, get_bal (state_morph st) = round_down (get_bal st) }.
 
 (** And that we have another contract, C', ... *)
 Context { C' : Contract setup entrypoint storage error }.
@@ -119,56 +117,43 @@ Context { spec_trade_precise : Prop }.
 
 (** Now, to specify the *upgrade* from C to C', we specify that there exist some morphism 
     f : C -> C' which satisfies the following conditions: *)
+Context { st_morph : storage -> storage }
+        { state_rounds_down : forall st, get_bal (st_morph st) = round_down (get_bal st) }.
 
 (** 1. f rounds trades down when it maps inputs *)
 Definition f_recv_input_rounds_down (f : ContractMorphism C' C) : Prop := 
-    forall c ctx st e e' t',
-    (* for calls to the TRADE entrypoint *)
-    e' = trade t' -> 
-    (* then in the mapping by f, *)
-    recv_inputs C' C (recv_cm f) (c, ctx, st, Some e') = 
-    (c, ctx, state_morph st, Some e) -> 
-    (* f sends trades to trades, *)
-    exists t,
-    e = trade t /\
-    (* such that the trade_qty of t is the rounded-down trade_qty of t' *)
+    forall t', exists t,
+    (msg_morph C' C f) (trade t') = trade t /\ 
     trade_qty t = round_down (trade_qty t').
 
 (** 2. aside from trade, f doesn't touch the other entrypoints *)
 Definition f_recv_input_other_equal (f : ContractMorphism C' C) : Prop := 
-    forall e o,
+    forall msg o,
     (* for calls to all other entrypoints, *)
-    e = other o ->
+    msg = other o ->
     (* f is the identity *)
-    recv_inputs C' C (recv_cm f) = id.
+    option_map (msg_morph C' C f) (other o) = other o.
 
 (** 3. f rounds down on the storage, but doesn't touch anything else. *)
-Definition f_recv_output_ok (f : ContractMorphism C' C) : Prop := 
-    forall x st acts,
-    x = Ok (st, acts) ->
-    recv_outputs C' C (recv_cm f) x = Ok (state_morph st, acts).
+Definition f_state_morph (f : ContractMorphism C' C) : Prop := 
+    (state_morph C' C f) = st_morph.
 
 (** 4. f is the identity on error values *)
 Definition f_recv_output_err (f : ContractMorphism C' C) : Prop := 
-    forall x e,
-    x = Err e ->
-    recv_outputs C' C (recv_cm f) x = x.
+    (error_morph C' C f) = @id error.
 
-(** 5. f is the identity on contract initialization *)
+(** 5. f is the identity on the setup *)
 Definition f_init_id (f : ContractMorphism C' C) : Prop := 
-    init_inputs C' C (init_cm f) = id /\
-    init_outputs C' C (init_cm f) = id.
+    (setup_morph C' C f) = @id setup.
 
 (** Now we have a specification of the correct upgrade in terms of the existence of 
     a contract morphism. *)
 Definition upgrade_spec (f : ContractMorphism C' C) : Prop := 
     f_recv_input_rounds_down f /\
     f_recv_input_other_equal f /\
-    f_recv_output_ok f /\
+    f_state_morph f /\
     f_recv_output_err f /\
     f_init_id f.
-
-
 
 
 (** The Upgrade Metaspecification.
@@ -176,38 +161,32 @@ Definition upgrade_spec (f : ContractMorphism C' C) : Prop :=
     the following result(s). *)
 
 (*** Suppose there exists some f : C' -> C satisfying upgrade_spec. *)
-Context { f : ContractMorphism C' C } { is_upgrade_morph : upgrade_spec f }.
-
-(*  *)
-Definition morphism_lift (caddr : Address) : ChainState -> ChainState. Admitted.
-(* sends *)
-Theorem morphism_lift_commutes : forall bstate' caddr cstate',
-    (* bstate' is reachable *)
-    reachable bstate' ->
-    (* where C' is at caddr with state cstate' *)
-    env_contracts bstate' caddr = Some (C' : WeakContract) -> 
-    contract_state bstate' caddr = Some cstate' ->
-    (*  *)
-    let bstate := morphism_lift caddr bstate' in  
-    let cstate := state_morph cstate' in 
-    env_contracts bstate caddr = Some (C : WeakContract) /\
-    contract_state bstate caddr = Some cstate.
-Admitted.
+Context { f : ContractMorphism C' C }
+        { is_upgrade_morph : upgrade_spec f }.
 
 (* All states of C' relate to equivalent states of C by rounding down *)
-Theorem rounding_down_invariant bstate' caddr :
+Theorem rounding_down_invariant bstate caddr (trace : ChainTrace empty_state bstate):
     (* Forall reachable states with contract at caddr, *)
-    reachable bstate' -> 
-    env_contracts bstate' caddr = Some (C' : WeakContract) ->
-    let bstate := morphism_lift caddr bstate' in  
+    env_contracts bstate caddr = Some (C' : WeakContract) ->
     (* cstate is the state of the contract AND *)
     exists (cstate' cstate : storage),
-    contract_state bstate' caddr = Some cstate' /\
-    contract_state bstate caddr = Some cstate /\
+    contract_state bstate caddr = Some cstate' /\
+    (* cstate is contract-reachable for C AND *)
+    cstate_reachable C cstate /\
     (* such that for cstate, the state of C in bstate, 
         the balance in cstate is rounded-down from the balance of cstate' *)
     get_bal cstate = round_down (get_bal cstate').
-Admitted.
-    (* goal : use contract induction *)
+Proof.
+    intros c_at_caddr.
+    pose proof (left_cm_induction f bstate caddr trace c_at_caddr)
+    as H_cm_ind.
+    destruct H_cm_ind as [cstate' [contr_cstate' [cstate [reach H_cm_ind]]]].
+    exists cstate', cstate.
+    repeat split; auto.
+    cbn in H_cm_ind.
+    rewrite H_cm_ind.
+    destruct is_upgrade_morph as [_ [_ [f_state [_ _]]]].
+    now rewrite f_state.
+Qed.
 
 End UpgradeSpec.

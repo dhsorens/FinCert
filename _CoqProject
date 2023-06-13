@@ -1,12 +1,18 @@
--Q phd-thesis-ConCert/execution/theories ConCert.Execution
--Q phd-thesis-ConCert/execution/test ConCert.Execution.Test
--Q phd-thesis-ConCert/utils/theories ConCert.Utils
+-Q FinCert-ConCert-fork/execution/theories ConCert.Execution
+-Q FinCert-ConCert-fork/execution/test ConCert.Execution.Test
+-Q FinCert-ConCert-fork/utils/theories ConCert.Utils
 
--Q specifications/StructuredPoolsSpec PhD.Specifications.StructuredPoolsSpec
+-Q specifications/StructuredPoolsSpec FinCert.Specifications.StructuredPoolsSpec
 specifications/StructuredPoolsSpec/StructuredPoolsSpec.v
 
--Q specifications/FA2Spec PhD.Specifications.FA2Spec
+-Q specifications/FA2Spec FinCert.Specifications.FA2Spec
 specifications/FA2Spec/FA2Spec.v
 
--Q specifications/Dexter2Spec PhD.Specifications.Dexter2Spec
+-Q specifications/FA1_2Spec FinCert.Specifications.FA1_2Spec
+specifications/FA1_2Spec/FA1_2Spec.v
+
+-Q specifications/Dexter2Spec FinCert.Specifications.Dexter2Spec
 specifications/Dexter2Spec/Dexter2Spec.v
+
+-Q specifications/Congress FinCert.Specifications.Congress
+specifications/Congress/Congress.v

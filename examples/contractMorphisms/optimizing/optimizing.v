@@ -20,7 +20,6 @@ Import ListNotations.
 Open Scope N_scope.
 Open Scope string.
 
-(* TODO: description of isomorphism *)
 Context { Base : ChainBase }.
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
@@ -108,12 +107,19 @@ Proof. auto. Qed.
 Lemma recv_coherence : forall c ctx st op_msg, 
     (recv_result_transform state_morph error_morph) ((Blockchain.receive C) c ctx st op_msg) = 
     (Blockchain.receive C') c ctx (state_morph st) (option_map msg_morph op_msg).
-Proof. Admitted.
+Proof.
+    intros.
+    simpl.
+    unfold recv_result_transform, receive, receive'.
+    destruct op_msg; auto.
+    destruct e. 
+    unfold state_morph.
+    auto.
+Qed.
 
 Definition f : ContractMorphism C C' := 
     simple_cm msg_morph setup_morph state_morph error_morph 
         init_coherence recv_coherence.
-    
 
 (* a morphism C' -> C *)
 Definition msg_morph' (e : entrypoint') : entrypoint := 
@@ -131,20 +137,73 @@ Proof. auto. Qed.
 Lemma recv_coherence' : forall c ctx st op_msg, 
     (recv_result_transform state_morph' error_morph') ((Blockchain.receive C') c ctx st op_msg) = 
     (Blockchain.receive C) c ctx (state_morph' st) (option_map msg_morph' op_msg).
-Proof. Admitted.
+Proof.
+    intros.
+    simpl.
+    unfold recv_result_transform, receive, receive'.
+    destruct op_msg; auto.
+    destruct e. 
+    unfold state_morph'.
+    auto.
+Qed.
 
 Definition g : ContractMorphism C' C := 
     simple_cm msg_morph' setup_morph' state_morph' error_morph' 
         init_coherence' recv_coherence'.
 
 
-(* f and g are isomorphisms *)        
+(* a quick lemma *)
+Lemma st_entries_eq : 
+    forall bstate caddr cstate,
+    env_contracts bstate caddr = Some (C : WeakContract) ->
+    contract_state bstate caddr = Some cstate -> 
+    cstate.(n_1) = cstate.(n_2).
+Proof.
+Admitted.
+
+
+(* f and g are isomorphisms *)
 Theorem c_c'_equivalent : is_iso_cm f g.
 Proof.
-    unfold is_iso_cm. split; apply is_eq_cm; try apply is_eq_cm_init; try apply is_eq_cm_recv; apply functional_extensionality; intros; unfold composition_cm, id_cm; cbn.
-    -   destruct x as [x s]. destruct x as [c ctx]. auto.
-    -   destruct x; auto. cbn. destruct t.
-        unfold state_morph', state_morph, id_fun. cbn. 
+    unfold is_iso_cm.
+    split.
+    -   unfold composition_cm, id_cm.
+        apply is_eq_cm.
+        +   apply is_eq_cm_init.
+            *   apply functional_extensionality.
+                intro x. destruct x as [(c, ctx) s].
+                simpl.
+                unfold setup_morph, setup_morph', id_fun.
+                auto.
+            *   apply functional_extensionality.
+                intro x. destruct x; auto.
+                simpl.
+                unfold setup_morph, setup_morph', id_fun.
+                unfold state_morph, state_morph'.
+                destruct t.
+                simpl.
+                admit.
+                (* state morph is not an iso/you  *)
+        +   apply is_eq_cm_recv.
+            *   apply functional_extensionality.
+                intro x. destruct x as [((c, ctx), st) msg].
+                simpl.
+                unfold state_morph, state_morph', msg_morph, msg_morph', id_fun.
+                destruct msg.
+                **  destruct e. cbn.
+                    destruct st. cbn.
+                    destruct u.
+                    admit. (* same issue *)
+                **  destruct st. cbn.
+                    admit. (* same issue *)  
+            *   apply functional_extensionality.
+                intro x. destruct x; auto.
+                destruct t as [st acts].
+                simpl.
+                unfold state_morph, state_morph', id_fun.
+                destruct st. 
+                simpl.
+                admit. (* same issue *)
 Admitted.
 
 End Isomorphism.

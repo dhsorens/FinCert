@@ -2,8 +2,8 @@
 
 (* TODO *)
 
-From PhD.Specifications.FA2Spec Require FA2Spec.
-From PhD.Specifications.StructuredPoolsSpec Require Import StructuredPoolsSpec.
+From FinCert.Specifications.FA2Spec Require FA2Spec.
+From FinCert.Specifications.StructuredPoolsSpec Require Import StructuredPoolsSpec.
 From ConCert.Execution Require Import Blockchain.
 From ConCert.Execution Require Import BuildUtils.
 From ConCert.Execution Require Import Containers.
