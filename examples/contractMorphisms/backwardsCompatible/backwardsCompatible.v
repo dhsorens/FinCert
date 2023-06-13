@@ -104,51 +104,45 @@ Qed.
 
 (* construct the morphism *)
 Definition f : ContractMorphism C C' := 
-    build_contract_morphism C C' setup_morph msg_morph state_morph error_morph init_coherence recv_coherence.
+    build_contract_morphism C C' setup_morph msg_morph state_morph error_morph 
+        init_coherence recv_coherence.
 
 
-(* this theorem shows a strong notion of backwards compatibility because there is an embedding of the old contract into the new 
+(* This theorem shows a strong notion of backwards compatibility because there is 
+    an embedding of the old contract into the new *)
 Theorem embedding : is_inj_cm f.
 Proof.
     unfold is_inj_cm; unfold is_inj. 
     repeat split; intros.
-    -   destruct a as [(c,ctx) s]. destruct a' as [(c',ctx') s'].
-        cbn in H. unfold setup_morph in H. cbn in H.
-        exact H.
-    -   destruct a, a'; cbn in H.
-        +   unfold state_morph in H.
-        +   unfold state_morph, error_morph in H. cbn in H. inversion H.
-        +   unfold error_morph, state_morph in H. cbn in H. inversion H.
-        +   unfold error_morph in H. cbn in H. auto.
-    -   destruct a as [((c,ctx),st) o].
-        destruct a' as [((c',ctx'),st') o'].
-        cbn in H. unfold state_morph, msg_morph in H. simpl in H.
-        destruct o, o'; cbn in H.
-        +   destruct e, e0. cbn in H.
-            destruct u, u0. 
-            inversion H.
-            f_equal.
-        +   inversion H.   
-        +   inversion H.
-        +   inversion H. 
-            f_equal.
-    -   destruct a, a'; try now destruct t.
-        +   now destruct t, t0.
-        +   now cbn in H.
+    -   cbn in H. 
+        now unfold setup_morph in H.
+    -   now destruct a, a', u, u0.
+    -   cbn in H.
+        now unfold state_morph in H.
+    -   cbn in H.
+        now unfold error_morph in H.
 Qed.
-*)
 
-
-
-(** THEOREM: 
-    all reachable states have a corresponding reachable state, related by the *injection*. *)
-Theorem injection_invariant bstate caddr :
+(** Theorem: 
+    All reachable states have a corresponding reachable state, related by the 
+    *embedding* f. *)
+Theorem injection_invariant bstate caddr (trace : ChainTrace empty_state bstate):
     (* Forall reachable states with contract C at caddr, *)
-    reachable bstate -> 
     env_contracts bstate caddr = Some (C : WeakContract) ->
-    (* there's a corresponding reachable state with C' *)
-    (* related by the injection *)
-    True.
-Admitted.
+    (* forall reachable states of C cstate, there's a corresponding reachable state
+        cstate' of C', related by the injection *)
+    exists (cstate' cstate : storage),
+    contract_state bstate caddr = Some cstate /\ 
+    (* cstate' is a contract-reachable state of C' *)
+    cstate_reachable C' cstate' /\
+    (* .. equal to cstate *)
+    cstate' = cstate.
+Proof.
+    intros c_at_caddr.
+    pose proof (left_cm_induction f bstate caddr trace c_at_caddr)
+    as H_cm_ind.
+    destruct H_cm_ind as [cstate [cstate_c [cstate' [reach H_cm_ind]]]].
+    now exists cstate', cstate.
+Qed.
 
 End BackwardsCompatible.

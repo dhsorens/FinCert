@@ -150,24 +150,24 @@ Definition setup_morph_1 := @id setup.
 Definition state_morph_1 := n_double.
 Definition error_morph_1 := @id error.
 
-Lemma init_coherence_1 : forall c ctx s, 
-(init_result_transform state_morph_1 error_morph_1) (init C1 c ctx s) = 
-init C2 c ctx (setup_morph_1 s).
-Proof. 
+Lemma init_coherence_1 : 
+    init_coherence_prop C1 C2 setup_morph_1 state_morph_1 error_morph_1.
+Proof.
+    unfold init_coherence_prop.
     intros.
-    unfold init_result_transform, state_morph_1, error_morph_1, setup_morph_1, n_double.
+    unfold result_functor, state_morph_1, error_morph_1, setup_morph_1, n_double.
     cbn.
     destruct s.
     -   now unfold init_2.
     -   unfold init_2. 
         now cbn.
 Qed.
-Lemma recv_coherence_1 : forall c ctx st op_msg, 
-(recv_result_transform state_morph_1 error_morph_1) (receive C1 c ctx st op_msg) = 
-receive C2 c ctx (state_morph_1 st) (option_map msg_morph_1 op_msg).
+Lemma recv_coherence_1 : 
+    recv_coherence_prop C1 C2 msg_morph_1 state_morph_1 error_morph_1.
 Proof.
+    unfold recv_coherence_prop.
     intros.
-    unfold recv_result_transform, state_morph_1, error_morph_1, msg_morph_1, n_double.
+    unfold result_functor, state_morph_1, error_morph_1, msg_morph_1, n_double.
     destruct op_msg; cbn; auto.
     destruct e.
     destruct st; auto.
@@ -176,9 +176,8 @@ Qed.
 
 (** The embedding *)
 Definition f1 : ContractMorphism C1 C2 := 
-    simple_cm msg_morph_1 setup_morph_1 state_morph_1 error_morph_1 
+    build_contract_morphism C1 C2 setup_morph_1 msg_morph_1 state_morph_1 error_morph_1 
         init_coherence_1 recv_coherence_1.
-
 
 
 (** f2 : C2 ->> C1 (a surjection) *)
@@ -191,12 +190,12 @@ Definition setup_morph_2 := @id setup.
 Definition state_morph_2 := n_div_2.
 Definition error_morph_2 := @id error.
 
-Lemma init_coherence_2 : forall c ctx s, 
-(init_result_transform state_morph_2 error_morph_2) (init C2 c ctx s) = 
-init C1 c ctx (setup_morph_2 s).
+Lemma init_coherence_2 : 
+    init_coherence_prop C2 C1 setup_morph_2 state_morph_2 error_morph_2.
 Proof.
+    unfold init_coherence_prop.
     intros.
-    unfold init_result_transform, state_morph_2, error_morph_2, setup_morph_2, n_div_2.
+    unfold result_functor, state_morph_2, error_morph_2, setup_morph_2, n_div_2.
     cbn.
     destruct s.
     -   now unfold init_1.
@@ -204,44 +203,35 @@ Proof.
         rewrite (double_half2 p).
         now cbn.
 Qed.
-Lemma recv_coherence_2 : forall c ctx st op_msg, 
-(recv_result_transform state_morph_2 error_morph_2) (receive C2 c ctx st op_msg) = 
-receive C1 c ctx (state_morph_2 st) (option_map msg_morph_2 op_msg).
+Lemma recv_coherence_2 : 
+    recv_coherence_prop C2 C1 msg_morph_2 state_morph_2 error_morph_2.
 Proof.
+    unfold recv_coherence_prop.
     intros.
-    unfold recv_result_transform, state_morph_2, error_morph_2, msg_morph_2, n_div_2.
+    unfold result_functor, state_morph_2, error_morph_2, msg_morph_2, n_div_2.
     destruct op_msg; auto.
     destruct e.
 Admitted.
 
 (** The surjection *)
 Definition f2 : ContractMorphism C2 C1 := 
-    simple_cm msg_morph_2 setup_morph_2 state_morph_2 error_morph_2 
+    build_contract_morphism C2 C1 setup_morph_2 msg_morph_2 state_morph_2 error_morph_2 
         init_coherence_2 recv_coherence_2.
-
 
 (** these are actually *isomorphisms* *)
 Theorem C1_C2_iso : is_iso_cm f1 f2.
 Proof.
     apply iso_cm_components.
-    repeat split; unfold init_inputs, init_cm; cbn; apply functional_extensionality; 
+    repeat split; unfold state_morph; cbn; apply functional_extensionality; 
     intro.
-    -   unfold setup_morph_1, setup_morph_2.
-        destruct x.
-        now destruct p as [c ctx].
-    -   unfold setup_morph_1, setup_morph_2.
-        destruct x.
-        now destruct p as [c ctx].
-    -   unfold init_result_transform, state_morph_1, error_morph_1, state_morph_2, error_morph_2.
-        destruct x; simpl; auto.
-        now rewrite double_half1.
-    -   unfold init_result_transform, state_morph_1, error_morph_1, state_morph_2, error_morph_2.
-        destruct x; simpl; auto.
-        (* ISSUE : this is a weaker form of "isomorphic" -- only on reachable states
-            (i.e. via the induction/whatever property) *)
+    -   destruct x; cbn; auto.
+        unfold state_morph_2.
+        unfold n_div_2.
+        now rewrite double_half2.
+    -   destruct x; cbn; auto.
+        unfold state_morph_2.
+        admit.
 Admitted.
-
-
 
 
 

@@ -358,7 +358,8 @@ Theorem upgrade_decomposed :
     new_state = state_morph (C_f c_version') C (fi_param c_version') cstate_f').
 Proof.
     intros * cstate_preim * recv_some.
-    apply (upgradeability_decomposed fi_param f_p extract_version new_version_state cstate c_version cstate_f upgradeability_decomposition cstate_preim chain ctx m new_state new_acts recv_some).
+    apply (upgradeability_decomposed fi_param f_p extract_version new_version_state cstate c_version 
+    cstate_f upgradeability_decomposition cstate_preim chain ctx m new_state new_acts recv_some).
 Qed.
 
 End Decomposition.
