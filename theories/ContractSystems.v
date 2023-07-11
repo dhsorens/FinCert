@@ -15,8 +15,6 @@ From FinCert.Meta Require Import ContractMorphisms.
 
 Import ListNotations.
 
-Axiom todo : forall {A}, A.
-
 (** Notation for a system of contracts, encoded as graphs, inspired by Milner's bigraphs *)
 
 Section ContractSystems.
@@ -24,7 +22,8 @@ Context {Base : ChainBase}.
 
 (** First the node type *)
 (** The fundamental building block of a system: a contract and its address *)
-Section GC.
+Section GeneralizedContract.
+
 Record GeneralizedContract
       (Setup Msg State Error : Type)
       `{Serializable Setup}
@@ -64,7 +63,7 @@ Definition build_gc
     (C : Contract Setup Msg State Error) := 
     build_gc_long Setup Msg State Error ser_set ser_msg ser_st ser_err caddr C.
 
-End GC.
+End GeneralizedContract.
 
 
 (** The Place Graph *)
@@ -74,7 +73,6 @@ Section PlaceGraph.
 Section NTree.
 
 Inductive ntree (T : Type) : Type :=
-| Leaf : ntree T
 | Node : T -> list (ntree T) -> ntree T.
 
 (** Utils *)
@@ -88,8 +86,6 @@ Fixpoint replace_at_index {T : Type} (n : nat) (new_elem : T) (l : list T) : lis
 (* Update a tree at a given index, which can be at a node or a leaf *)
 Fixpoint update_ntree_at_index {T : Type} (tree : ntree T) (value : T) (leaf_index : list nat) : ntree T :=
   match tree, leaf_index with
-  | Leaf _, nil => Node T value nil
-  | Leaf _, _ :: _ => tree (* Cannot add a node at a leaf that does not exist *)
   | Node _ v children, nil => Node T value children (* Reached the desired leaf *)
   | Node _ v children, i :: is =>
       match List.nth_error children i with
@@ -101,8 +97,6 @@ Fixpoint update_ntree_at_index {T : Type} (tree : ntree T) (value : T) (leaf_ind
 (* Merge semantics: add a tree to a given leaf *)
 Fixpoint add_tree_at_leaf {T} (orig append : ntree T) (leaf_index : list nat) : ntree T :=
     match orig, leaf_index with
-    | Leaf _, nil => append
-    | Leaf _, _ :: _ => orig (* Cannot add a tree at a leaf that does not exist *)
     | Node _ v children, nil => orig (* Must add only at a leaf *)
     | Node _ v children, i :: is =>
         match List.nth_error children i with
@@ -113,8 +107,6 @@ Fixpoint add_tree_at_leaf {T} (orig append : ntree T) (leaf_index : list nat) : 
 
 Fixpoint ntree_find_node {T} (leaf_index : list nat) (tree : ntree T) : option T :=
     match tree, leaf_index with 
-    | Leaf _, nil => None (* The index was for a leaf *)
-    | Leaf _, _ :: _ => None (* Cannot find a node that does not exist *)
     | Node _ v children, nil => Some v (* Reached the desired node *)
     | Node _ v children, i :: is =>
         match List.nth_error children i with
@@ -123,17 +115,19 @@ Fixpoint ntree_find_node {T} (leaf_index : list nat) (tree : ntree T) : option T
         end
     end.
 
-Definition empty_ntree {T} := Leaf T.
+(* Definition empty_ntree {T} := Leaf T. *)
 
 Definition singleton_ntree {T} (t : T) := Node T t nil.
 
 Definition in_ntree {T} (t : T) (tree : ntree T) : Prop := 
     exists leaf_index, ntree_find_node leaf_index tree = Some t.
 
+Definition search_ntree {T} (t : T) (tree : ntree T) : bool.
+Admitted.
+
 (* Given an accumulating function and a starting point, iterate over the tree *)
 Fixpoint ntree_accum {T} (tree : ntree T) (accum : T -> T -> T) (t : T) : T :=
     match tree with 
-    | Leaf _ => t (* we've reached a leaf *)
     | Node _ v children => 
         List.fold_left 
         (fun (t' : T) (child : ntree T) => accum (ntree_accum child accum t) t')
@@ -144,7 +138,6 @@ Fixpoint ntree_accum {T} (tree : ntree T) (accum : T -> T -> T) (t : T) : T :=
 (** Functoriality *)
 Fixpoint ntree_funct {T T'} (f : T -> T') (tree : ntree T) : ntree T' := 
     match tree with 
-    | Leaf _ => Leaf T' 
     | Node _ v children => 
         Node T' (f v) (List.map (fun child => ntree_funct f child) children)
     end.
@@ -181,13 +174,12 @@ Qed.
 
 (** Permutations *)
 Inductive NTree_Permutation {T} : ntree T -> ntree T -> Prop := 
-| perm_nil : NTree_Permutation empty_ntree empty_ntree
-| perm_swap v children1 children2 : 
+| perm_swap v children1 children2 :
     Permutation children1 children2 ->
     NTree_Permutation (Node T v children1) (Node T v children2)
 | perm_trans ntree1 ntree2 ntree3 : 
-    NTree_Permutation ntree1 ntree2 -> 
-    NTree_Permutation ntree2 ntree3 -> 
+    NTree_Permutation ntree1 ntree2 ->
+    NTree_Permutation ntree2 ntree3 ->
     NTree_Permutation ntree1 ntree3.
 
 Lemma ntree_permutation_comm {T} (ntree1 ntree2 : ntree T) : 
@@ -196,7 +188,6 @@ Lemma ntree_permutation_comm {T} (ntree1 ntree2 : ntree T) :
 Proof.
     intro perm.
     induction perm.
-    -   apply perm_nil.
     -   apply Permutation_sym in H.
         now apply perm_swap.
     -   apply (perm_trans ntree3 ntree2 ntree1 IHperm2 IHperm1).
@@ -234,59 +225,6 @@ End NTree.
 
 End PlaceGraph.
 
-
-(** The Link Graph *)
-Section LinkGraph.
-
-(* the system's graph *)
-Definition call_to call : option Address := 
-    match call with 
-    | act_transfer _ _ => None 
-    | act_call addr _ _ => Some addr 
-    | act_deploy _ _ _ => None 
-    end.
-
-(* The type of edges *)
-(* Edges in the link graph are given by contract calls *)
-Record LinkGraphEdges 
-    `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
-    `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    (G1 : GeneralizedContract Setup1 Msg1 State1 Error1)
-    (G2 : GeneralizedContract Setup2 Msg2 State2 Error2) : Type := {
-    e_chain : Chain ; 
-    e_ctx : ContractCallContext ; 
-    e_prvstate : State1 ; (* prev state *)
-    e_msg : option Msg1 ; (* msg *)
-    e_newstate : State1 ; (* new state *)
-    e_nacts : list ActionBody ;
-    linking_act : ActionBody ; (* the action that links the two contracts *)
-    (* there is some transaction for which G1 calls G2 *)
-    e_recv_some : 
-        (* this is a successful call *)
-        receive (gc_c' G1) e_chain e_ctx e_prvstate e_msg = Ok (e_newstate, e_nacts) /\
-        (* which emits the transaction linking_act, *)
-        List.In linking_act e_nacts /\ 
-        (* and it is a call to G2 *)
-        call_to linking_act = Some (gc_caddr' G2) ;
-}.
-
-(* edges can be composed if they are sequential transactions *)
-Definition edges_compose 
-    `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
-    `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-    (G1 : GeneralizedContract Setup1 Msg1 State1 Error1)
-    (G2 : GeneralizedContract Setup2 Msg2 State2 Error2)
-    (G3 : GeneralizedContract Setup3 Msg3 State3 Error3)
-    (e1 : LinkGraphEdges G1 G2) (e2 : LinkGraphEdges G2 G3) := 
-    match linking_act G1 G2 e1 with 
-    | act_call _ _ msg => option_map serialize (e_msg G2 G3 e2) = Some msg
-    | _ => False
-    end.
-
-End LinkGraph.
-
-
 (** A system of contracts is a (list of) place graphs, 
     endowed automatically with the link graph structure *)
 Section SystemDefinition.
@@ -313,10 +251,10 @@ Proof.
     destruct C as [init1 recv1].
     apply build_contract.
     (* init *)
-    -   exact (fun c ctx s' => 
-            match s' with 
-            | inl s => 
-                match init1 c ctx s with 
+    -   exact (fun c ctx s' =>
+            match s' with
+            | inl s =>
+                match init1 c ctx s with
                 | Ok st => Ok (inl st)
                 | Err e => Err e
                 end
@@ -425,19 +363,6 @@ Section SystemInterface.
 (** System state *)
 Definition SystemState (State : Type) : Type := ntree (option State).
 
-(* the system state is constructed with the same inductive structure as the system *)
-Definition sys_bstate
-    `{sys_set : Serializable Setup}
-    `{sys_msg : Serializable Msg}
-    `{sys_st : Serializable State}
-    (bstate : ChainState)
-    (sys : ContractSystem Setup Msg State) 
-    : SystemState SerializedValue :=
-    ntree_funct
-    (fun (gc : GeneralizedContract Setup Msg State nat) =>
-        env_contract_states bstate (gc_caddr' gc))
-    sys.
-
 (** System interface *)
 Record SystemMsg (Msg : Type) `{Serializable Msg} := {
     sm_msg : option Msg ;
@@ -447,7 +372,7 @@ Record SystemMsg (Msg : Type) `{Serializable Msg} := {
 Definition sm_msg' `{Serializable Msg} (sm : SystemMsg Msg) := sm_msg Msg sm.
 Definition sm_place' `{Serializable Msg} (sm : SystemMsg Msg) := sm_place Msg sm.
 
-(* move from Generalized State to Generalized State *)
+(* Move from System State to System State *)
 Definition sys_receive 
     {Setup Msg State : Type}
     `{sys_set : Serializable Setup}
@@ -456,18 +381,20 @@ Definition sys_receive
     (sys : ContractSystem Setup Msg State)
     (c : Chain)
     (ctx : ContractCallContext)
-    (g_st : SystemState State) (* state *)
-    (g_msg : SystemMsg Msg) (* message *) :
+    (sys_st : SystemState State) (* state *)
+    (sys_msg : SystemMsg Msg) (* message *) :
     result (SystemState State * list ActionBody) nat := 
-    match ntree_find_node (sm_place' g_msg) sys with 
+    match ntree_find_node (sm_place' sys_msg) sys with 
     | Some gc => 
-        match ntree_find_node (sm_place' g_msg) g_st with 
+        match ntree_find_node (sm_place' sys_msg) sys_st with 
         | Some st_op => 
             match st_op with 
             | Some st => 
-                match receive (gc_c' gc) c ctx st (sm_msg' g_msg) with 
-                | Ok (new_st, new_acts) => 
-                    Ok (update_ntree_at_index g_st (Some new_st) (sm_place' g_msg), new_acts)
+                match receive (gc_c' gc) c ctx st (sm_msg' sys_msg) with 
+                | Ok (new_st, new_acts) =>
+                    let new_sys_st := 
+                    update_ntree_at_index sys_st (Some new_st) (sm_place' sys_msg) in
+                    Ok (new_sys_st, new_acts)
                 | Err e => Err e
                 end
             | None => Err 0
@@ -482,8 +409,120 @@ End SystemInterface.
 End SystemDefinition.
 
 
+(** The Link Graph *)
+Section LinkGraph.
+
+Definition is_sys_recursive_call 
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State)
+    (act : ActionBody) := 
+    exists amt caddr place ser_msg, 
+        act = act_call caddr amt ser_msg /\
+        ntree_find_node place (ntree_funct gc_caddr' sys) = (Some caddr).
+
+Definition not_sys_recursive_call
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State)
+    (act : ActionBody) : Prop := 
+    ~ (is_sys_recursive_call sys act).
+
+Record LinkGraphEdge
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State) : Type := 
+    build_link_graph_edge {
+        (* call data *)
+        e_chain : Chain ;
+        e_ctx : ContractCallContext ;
+        e_msg : SystemMsg Msg ; (* msg *)
+        e_prvstate : SystemState State ; (* prev state *)
+        e_newstate : SystemState State ; (* new state *)
+        e_nacts : list ActionBody ;
+        (* st the call is successful *)
+        e_recv_some : sys_receive sys e_chain e_ctx e_prvstate e_msg = Ok (e_newstate, e_nacts) ;
+        (* resulting in a system recursive action *)
+        linking_act : exists link, 
+            List.In link e_nacts /\
+            is_sys_recursive_call sys link ;
+}.
+
+Definition remove_rec_call `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State)
+    (link_edge : LinkGraphEdge sys)
+    (acts : list ActionBody) : list ActionBody.
+Admitted. (* remove_once_actnbdy *)
+
+Definition edge_from_acts `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State)
+    (link_edge : LinkGraphEdge sys)
+    (acts : list ActionBody) : Prop.
+Admitted. (* List.In link_act link_input_acts *)
+
+(* Types to model a traversal of the link graph *)
+Record link_graph_step_type `{Serializable Setup} `{Serializable Msg} `{Serializable State}
+    (sys : ContractSystem Setup Msg State) := 
+    build_link_graph_step {
+        (* an edge *)
+        link_edge : LinkGraphEdge sys ;
+        (* the context *)
+        link_input_acts : list ActionBody ;
+        link_output_nacts : list ActionBody ;
+        (* such that link_act comes from input_acts *)
+        edge_in_input : edge_from_acts sys link_edge link_input_acts ;
+        (* and output_nacts accumulates as it goes along *)
+        output_accum : 
+            link_output_nacts = 
+            (remove_rec_call sys link_edge link_input_acts) ++ (e_nacts sys link_edge) ;
+}.
+
+(* An (exhaustive) link graph traversal *)
+Fixpoint is_link_graph_traversal
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State} 
+    {sys : ContractSystem Setup Msg State}
+    (sys_call_seq : list (link_graph_step_type sys)) : Prop :=
+    match sys_call_seq with 
+    | [] => True (* trivially true *)
+    | sys_c1 :: sys_calls =>
+        match sys_calls with 
+        | [] => Forall (not_sys_recursive_call sys) (link_output_nacts sys sys_c1)
+        | sys_c2 :: sys_calls' =>
+            link_input_acts sys sys_c2 = link_output_nacts sys sys_c1 /\
+            e_prvstate sys (link_edge sys sys_c2) = e_newstate sys (link_edge sys sys_c1) /\
+            (* recurse *)
+            (is_link_graph_traversal sys_calls)
+        end
+    end.
+
+End LinkGraph.
+
+
 (** Contract System Utils *)
 Section SystemUtils.
+
+(* get a system state from a bstate *)
+Definition sys_bstate
+    `{sys_set : Serializable Setup}
+    `{sys_msg : Serializable Msg}
+    `{sys_st : Serializable State}
+    (bstate : ChainState)
+    (sys : ContractSystem Setup Msg State) 
+    : SystemState SerializedValue :=
+    ntree_funct
+    (fun (gc : GeneralizedContract Setup Msg State nat) =>
+        env_contract_states bstate (gc_caddr' gc))
+    sys.
+
+Definition is_sys_state
+    `{sys_set : Serializable Setup}
+    `{sys_msg : Serializable Msg}
+    `{sys_st : Serializable State}
+    (bstate : ChainState)
+    (sys : ContractSystem Setup Msg State)
+    (sys_state : SystemState State) : Prop :=
+    forall place gc,
+    ntree_find_node place sys = Some gc <->
+    exists st_op,
+    ntree_find_node place sys_state = Some st_op /\
+    env_contract_states bstate (gc_caddr' gc) = option_map serialize st_op.
 
 (* a system is deployed *)
 Definition sys_deployed bstate
@@ -558,12 +597,14 @@ End SystemUtils.
 Section SystemMorphism.
 
 Section MorphDefn.
-Context     `{Serializable Setup1}
-`{Serializable Msg1}
-`{Serializable State1}
-`{Serializable Setup2}
-`{Serializable Msg2}
-`{Serializable State2}.
+Context `{Serializable Setup1}
+        `{Serializable Msg1}
+        `{Serializable State1}
+        `{Serializable Setup2}
+        `{Serializable Msg2}
+        `{Serializable State2}
+        `{Serializable State1Accum}
+        `{Serializable State2Accum}.
 
 (* a morphism of systems of contracts *)
 Record SystemMorphism
@@ -580,7 +621,7 @@ Record SystemMorphism
             is_genesis_gstate_sys sys2 (gstate_morph gstate) ;
         (* recv coherence analogue *)
         sys_coherence : forall c ctx gst gmsg,
-            result_functor (fun '(gst, l) => (gstate_morph gst, l)) gerror_morph
+            result_functor (fun '(gst, nacts) => (gstate_morph gst, nacts)) gerror_morph
                 (sys_receive sys1 c ctx gst gmsg) =
             sys_receive sys2 c ctx (gstate_morph gst) (gmsg_morph gmsg) ;
 }.
@@ -658,8 +699,8 @@ Proposition compose_sm_assoc
     {sys4 : ContractSystem Setup4 Msg4 State4}
     (f : SystemMorphism sys1 sys2)
     (g : SystemMorphism sys2 sys3)
-    (h : SystemMorphism sys3 sys4) : 
-    compose_sm h (compose_sm g f) = 
+    (h : SystemMorphism sys3 sys4) :
+    compose_sm h (compose_sm g f) =
     compose_sm (compose_sm h g) f.
 Proof.
     now apply eq_sm; unfold compose_sm; destruct f, g, h.
@@ -786,16 +827,32 @@ Section Bisimulation.
 Section SystemTrace.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State}.
 
-Record SystemStep 
-    (sys : ContractSystem Setup Msg State) 
-    (st1 st2 : SystemState State) := 
+Definition steps_resulting_acts
+    (sys : ContractSystem Setup Msg State)
+    (steps : list (link_graph_step_type sys)) : list ActionBody := 
+    match (rev steps) with 
+    | [] => nil
+    | final_step :: steps' =>
+        link_output_nacts sys final_step 
+    end.
+
+Definition fold_over_steps
+    (sys : ContractSystem Setup Msg State)
+    (steps : list (link_graph_step_type sys))
+    (st1 : SystemState State) : SystemState State.
+Admitted.
+
+(* a system step is an incoming message *)
+Record SystemStep
+    (sys : ContractSystem Setup Msg State)
+    (st1 st2 : SystemState State) :=
     build_system_step {
-    sys_chain : Chain ; 
-    sys_ctx : ContractCallContext ; 
-    sys_gmsg : SystemMsg Msg ; 
-    sys_new_acts : list ActionBody ;
-    (* receive is called successfully *)
-    sys_recv_some : sys_receive sys sys_chain sys_ctx st1 sys_gmsg = Ok (st2, sys_new_acts) ;
+        (* list of link graph steps *)
+        steps : list (link_graph_step_type sys) ;
+        (* from st1 to st2, which we get by folding over steps *)
+        steps_states : fold_over_steps sys steps st1 = st2 ;
+        (* which is a link graph traversal *)
+        steps_traversal : is_link_graph_traversal steps ;
 }.
 
 Definition SystemTrace (sys : ContractSystem Setup Msg State) :=
@@ -892,6 +949,26 @@ Definition is_iso_stm
     compose_stm m2 m1 = id_stm sys1 /\ 
     compose_stm m1 m2 = id_stm sys2.
 
+Section LiftingTheorem.
+
+Definition sm_step_funct
+    `{ser_setup1 : Serializable Setup1}
+    `{ser_msg1 : Serializable Msg1}
+    `{ser_state1 : Serializable State1}
+    `{ser_setup2 : Serializable Setup2}
+    `{ser_msg2 : Serializable Msg2}
+    `{ser_state2 : Serializable State2}
+    {sys1 : ContractSystem Setup1 Msg1 State1}
+    {sys2 : ContractSystem Setup2 Msg2 State2}
+    (f : SystemMorphism sys1 sys2)
+    (sys_step1 : link_graph_step_type sys1) : link_graph_step_type sys2.
+Proof.
+    destruct f as [gst_morph gmsg_morph gerr_morph sys_gen sys_coh].
+    destruct sys_step1 as [link_msg1 link_act1 link_G1 link_G2 link_edge1 link_fm_G1
+        link_t_G2 edge_msg act_msg acts_in acts_out call_input output_ac].
+    pose (gmsg_morph link_msg1) as link_smsg2'.
+Admitted.
+
 (** A morphism of systems lifts to a morphism of System Traces *)
 Definition sm_lift_stm
     `{ser_setup1 : Serializable Setup1}
@@ -913,17 +990,16 @@ Proof.
         State2 ser_state2
         sys1 sys2 (gstate_morph sys1 sys2 f) (sys_genesis sys1 sys2 f)).
     intros * s_step.
-    destruct s_step.
-    apply (build_system_step sys2 
+    destruct s_step as [sys_steps sys_traversal sys_states sys_ext sys_trav_exh].
+    apply (build_system_step sys2
         (gstate_morph sys1 sys2 f gstate1) 
-        (gstate_morph sys1 sys2 f gstate2) 
-        sys_chain0 
-        sys_ctx0 
-        (gmsg_morph sys1 sys2 f sys_gmsg0)
-        sys_new_acts0).
-    rewrite <- (sys_coherence sys1 sys2 f).
-    now rewrite sys_recv_some0.
-Defined.
+        (gstate_morph sys1 sys2 f gstate2)
+        (map (sm_step_funct f) sys_steps)).
+    -   admit.
+    -   admit.
+    -   admit.
+    -   admit.
+Admitted. (* DEFINED *)
 
 (* such that id lifts to id, ... *)
 Lemma sm_lift_stm_id 
@@ -1012,27 +1088,9 @@ Proof.
         now rewrite sm_lift_stm_id.
 Qed.
 
+End LiftingTheorem.
+
 End Bisimulation.
-
-
-(** Trace compression *)
-(* TODO a relation on steps that "quotients" them out *)
-(* TODO: 
-    - If the call is recursive, you should be able to "quotient"
-    - Maybe this is an operation for bisimulation/equivalence ...
-    - OR MAYBE it should be part of the notion of a step?! cause you want that captured in the *TRACE* of a system somehow *)
-
-
-(** State compression *)
-Definition sys_state_compress {State1 State2} :
-    forall (sys_state : SystemState (State1 + State2)) v c,
-    sys_state = Node (option (State1 + State2)) (Some (inl v)) 
-        [ Node (option (State1 + State2)) (Some (inr c)) nil ] ->
-    SystemState (State1 * State2).
-Proof.
-    intros * H.
-    exact (Node (option (State1 * State2)) (Some (v, c)) nil).
-Defined.
 
 End ContractSystemEquivalence.
 
