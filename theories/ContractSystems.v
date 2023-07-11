@@ -412,84 +412,50 @@ End SystemDefinition.
 (** The Link Graph *)
 Section LinkGraph.
 
-Definition is_sys_recursive_call 
-    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State)
-    (act : ActionBody) := 
-    exists amt caddr place ser_msg, 
-        act = act_call caddr amt ser_msg /\
-        ntree_find_node place (ntree_funct gc_caddr' sys) = (Some caddr).
+(* the system's graph *)
+Definition call_to call : option Address := 
+    match call with 
+    | act_transfer _ _ => None 
+    | act_call caddr _ _ => Some caddr 
+    | act_deploy _ _ _ => None 
+    end.
 
-Definition not_sys_recursive_call
-    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State)
-    (act : ActionBody) : Prop := 
-    ~ (is_sys_recursive_call sys act).
-
-Record LinkGraphEdge
-    `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State) : Type := 
-    build_link_graph_edge {
-        (* call data *)
-        e_chain : Chain ;
-        e_ctx : ContractCallContext ;
-        e_msg : SystemMsg Msg ; (* msg *)
-        e_prvstate : SystemState State ; (* prev state *)
-        e_newstate : SystemState State ; (* new state *)
-        e_nacts : list ActionBody ;
-        (* st the call is successful *)
-        e_recv_some : sys_receive sys e_chain e_ctx e_prvstate e_msg = Ok (e_newstate, e_nacts) ;
-        (* resulting in a system recursive action *)
-        linking_act : exists link, 
-            List.In link e_nacts /\
-            is_sys_recursive_call sys link ;
+(* The type of edges *)
+(* Edges in the link graph are given by contract calls *)
+Record LinkGraphEdges 
+    `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+    `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+    (G1 : GeneralizedContract Setup1 Msg1 State1 Error1)
+    (G2 : GeneralizedContract Setup2 Msg2 State2 Error2) : Type := {
+    e_chain : Chain ;
+    e_ctx : ContractCallContext ;
+    e_prvstate : State1 ; (* prev state *)
+    e_msg : option Msg1 ; (* msg *)
+    e_newstate : State1 ; (* new state *)
+    e_nacts : list ActionBody ;
+    linking_act : ActionBody ; (* the action that links the two contracts *)
+    (* there is some transaction for which G1 calls G2 *)
+    e_recv_some : 
+        (* this is a successful call *)
+        receive (gc_c' G1) e_chain e_ctx e_prvstate e_msg = Ok (e_newstate, e_nacts) /\
+        (* which emits the transaction linking_act, *)
+        List.In linking_act e_nacts /\
+        (* and it is a call to G2 *)
+        call_to linking_act = Some (gc_caddr' G2) ;
 }.
 
-Definition remove_rec_call `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State)
-    (link_edge : LinkGraphEdge sys)
-    (acts : list ActionBody) : list ActionBody.
-Admitted. (* remove_once_actnbdy *)
-
-Definition edge_from_acts `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State)
-    (link_edge : LinkGraphEdge sys)
-    (acts : list ActionBody) : Prop.
-Admitted. (* List.In link_act link_input_acts *)
-
-(* Types to model a traversal of the link graph *)
-Record link_graph_step_type `{Serializable Setup} `{Serializable Msg} `{Serializable State}
-    (sys : ContractSystem Setup Msg State) := 
-    build_link_graph_step {
-        (* an edge *)
-        link_edge : LinkGraphEdge sys ;
-        (* the context *)
-        link_input_acts : list ActionBody ;
-        link_output_nacts : list ActionBody ;
-        (* such that link_act comes from input_acts *)
-        edge_in_input : edge_from_acts sys link_edge link_input_acts ;
-        (* and output_nacts accumulates as it goes along *)
-        output_accum : 
-            link_output_nacts = 
-            (remove_rec_call sys link_edge link_input_acts) ++ (e_nacts sys link_edge) ;
-}.
-
-(* An (exhaustive) link graph traversal *)
-Fixpoint is_link_graph_traversal
-    `{Serializable Setup} `{Serializable Msg} `{Serializable State} 
-    {sys : ContractSystem Setup Msg State}
-    (sys_call_seq : list (link_graph_step_type sys)) : Prop :=
-    match sys_call_seq with 
-    | [] => True (* trivially true *)
-    | sys_c1 :: sys_calls =>
-        match sys_calls with 
-        | [] => Forall (not_sys_recursive_call sys) (link_output_nacts sys sys_c1)
-        | sys_c2 :: sys_calls' =>
-            link_input_acts sys sys_c2 = link_output_nacts sys sys_c1 /\
-            e_prvstate sys (link_edge sys sys_c2) = e_newstate sys (link_edge sys sys_c1) /\
-            (* recurse *)
-            (is_link_graph_traversal sys_calls)
-        end
+(* edges can be composed if they are sequential transactions *)
+Definition edges_compose 
+    `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+    `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+    `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+    {G1 : GeneralizedContract Setup1 Msg1 State1 Error1}
+    {G2 : GeneralizedContract Setup2 Msg2 State2 Error2}
+    {G3 : GeneralizedContract Setup3 Msg3 State3 Error3}
+    (e1 : LinkGraphEdges G1 G2) (e2 : LinkGraphEdges G2 G3) : Prop := 
+    match linking_act G1 G2 e1 with 
+    | act_call _ _ msg => option_map serialize (e_msg G2 G3 e2) = Some msg
+    | _ => False
     end.
 
 End LinkGraph.
@@ -827,38 +793,28 @@ Section Bisimulation.
 Section SystemTrace.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State}.
 
-Definition steps_resulting_acts
-    (sys : ContractSystem Setup Msg State)
-    (steps : list (link_graph_step_type sys)) : list ActionBody := 
-    match (rev steps) with 
-    | [] => nil
-    | final_step :: steps' =>
-        link_output_nacts sys final_step 
-    end.
-
-Definition fold_over_steps
-    (sys : ContractSystem Setup Msg State)
-    (steps : list (link_graph_step_type sys))
-    (st1 : SystemState State) : SystemState State.
-Admitted.
-
-(* a system step is an incoming message *)
-Record SystemStep
+Record SystemStep_single
     (sys : ContractSystem Setup Msg State)
     (st1 st2 : SystemState State) :=
-    build_system_step {
-        (* list of link graph steps *)
-        steps : list (link_graph_step_type sys) ;
-        (* from st1 to st2, which we get by folding over steps *)
-        steps_states : fold_over_steps sys steps st1 = st2 ;
-        (* which is a link graph traversal *)
-        steps_traversal : is_link_graph_traversal steps ;
+    build_system_step_single {
+        step_chain : Chain ;
+        step_ctx : ContractCallContext ;
+        step_gmsg : SystemMsg Msg ; 
+        step_nacts : list ActionBody ;
+        (* receive is called successfully *)
+        step_recv_some : 
+            sys_receive sys step_chain step_ctx st1 step_gmsg = Ok (st2, step_nacts) ;
 }.
+
+(* in a system, a step may be one or multiple steps, chained together *)
+Definition SystemStep (sys : ContractSystem Setup Msg State) :=
+    ChainedList (SystemState State) (SystemStep_single sys).
 
 Definition SystemTrace (sys : ContractSystem Setup Msg State) :=
     ChainedList (SystemState State) (SystemStep sys).
 
 End SystemTrace.
+
 
 (** Morphism of system traces *)
 Record SystemTraceMorphism
@@ -951,24 +907,6 @@ Definition is_iso_stm
 
 Section LiftingTheorem.
 
-Definition sm_step_funct
-    `{ser_setup1 : Serializable Setup1}
-    `{ser_msg1 : Serializable Msg1}
-    `{ser_state1 : Serializable State1}
-    `{ser_setup2 : Serializable Setup2}
-    `{ser_msg2 : Serializable Msg2}
-    `{ser_state2 : Serializable State2}
-    {sys1 : ContractSystem Setup1 Msg1 State1}
-    {sys2 : ContractSystem Setup2 Msg2 State2}
-    (f : SystemMorphism sys1 sys2)
-    (sys_step1 : link_graph_step_type sys1) : link_graph_step_type sys2.
-Proof.
-    destruct f as [gst_morph gmsg_morph gerr_morph sys_gen sys_coh].
-    destruct sys_step1 as [link_msg1 link_act1 link_G1 link_G2 link_edge1 link_fm_G1
-        link_t_G2 edge_msg act_msg acts_in acts_out call_input output_ac].
-    pose (gmsg_morph link_msg1) as link_smsg2'.
-Admitted.
-
 (** A morphism of systems lifts to a morphism of System Traces *)
 Definition sm_lift_stm
     `{ser_setup1 : Serializable Setup1}
@@ -990,16 +928,23 @@ Proof.
         State2 ser_state2
         sys1 sys2 (gstate_morph sys1 sys2 f) (sys_genesis sys1 sys2 f)).
     intros * s_step.
-    destruct s_step as [sys_steps sys_traversal sys_states sys_ext sys_trav_exh].
-    apply (build_system_step sys2
-        (gstate_morph sys1 sys2 f gstate1) 
-        (gstate_morph sys1 sys2 f gstate2)
-        (map (sm_step_funct f) sys_steps)).
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-Admitted. (* DEFINED *)
+    destruct f as [gstate_mph gmsg_mph gerr_mph sys_gen sys_coh].
+    cbn.
+    induction s_step.
+    -   apply clnil.
+    -   assert (SystemStep_single sys2 (gstate_mph mid) (gstate_mph to)) 
+        as step_single_sys2.
+        {   destruct l as [stp_chain stp_ctx stp_msg stp_nacts stp_recv].
+            apply (build_system_step_single sys2 
+                (gstate_mph mid) (gstate_mph to)
+                stp_chain 
+                stp_ctx 
+                (gmsg_mph stp_msg)
+                stp_nacts).
+            rewrite <- sys_coh.
+            now rewrite stp_recv. }
+        apply (ChainedList.snoc IHs_step step_single_sys2).
+Defined.
 
 (* such that id lifts to id, ... *)
 Lemma sm_lift_stm_id 
@@ -1018,8 +963,11 @@ Proof.
     intro sys_state2.
     apply functional_extensionality_dep.
     intro sys_step.
-    destruct sys_step.
-    apply f_equal.
+    induction sys_step; auto.
+    destruct l.
+    cbn.
+    rewrite IHsys_step.
+    do 2 apply f_equal.
     apply proof_irrelevance.
 Qed.
 
@@ -1057,9 +1005,12 @@ Proof.
     intro sys_state2.
     apply functional_extensionality_dep.
     intro sys_step.
+    induction sys_step; auto.
+    destruct l.
     cbn.
-    destruct sys_step.
-    apply f_equal.
+    rewrite <- IHsys_step.
+    cbn.
+    do 2 apply f_equal.
     apply proof_irrelevance.
 Qed.
 
