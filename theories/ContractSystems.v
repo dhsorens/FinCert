@@ -48,7 +48,6 @@ Fixpoint ntree_map {T T'} (f : T -> T') (tree : ntree T) : ntree T' :=
         Node T' (f v) (List.map (fun child => ntree_map f child) children)
     end.
 
-(* WRONG *)
 Fixpoint replace_at_index {T : Type} (n : nat) (new_elem : T) (l : list T) : list T :=
   match l, n with
   | nil, _ => nil
@@ -56,14 +55,13 @@ Fixpoint replace_at_index {T : Type} (n : nat) (new_elem : T) (l : list T) : lis
   | hd :: tl, S n' => hd :: replace_at_index n' new_elem tl
   end.
 
-(* WRONG *)
 Fixpoint add_tree_at_leaf {T} (orig append : ntree T) (leaf_index : list nat) : ntree T :=
     match orig, leaf_index with
-    | Node _ v children, nil => orig (* Must add only at a leaf *)
+    | Node _ v children, nil => Node T v (append :: children)
     | Node _ v children, i :: is =>
         match List.nth_error children i with
         | Some child => Node T v (replace_at_index i (add_tree_at_leaf child append is) children)
-        | None => orig (* Invalid leaf index *)
+        | None => orig
         end
     end.
 
@@ -172,7 +170,7 @@ Proof.
 Defined.
 
 (* same as before, but accepts messages on the right now *)
-Definition c_sum_r 
+Definition c_sum_r
     (C1 : Contract Setup1 Msg1 State1 Error1)
     (C2 : Contract Setup2 Msg2 State2 Error2) :
     Contract (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2).
@@ -195,10 +193,10 @@ Proof.
                 match msg with
                 (* the message was not intended for this contract, so we do nothing *)
                 | inl msg => Ok (st', nil)
-                (* the message was intended for this contract, 
+                (* the message was intended for this contract,
                     so we attempt to udpate the state *)
                 | inr msg =>
-                    match recv2 c ctx st2 (Some msg) with 
+                    match recv2 c ctx st2 (Some msg) with
                     | Ok (new_st2, nacts) => Ok ((st1, new_st2), nacts)
                     | Err e => Err (inr e)
                     end
@@ -258,8 +256,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
     with an init and recv coherence *)
 
 Record SystemMorphism
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1) 
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) := 
+    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
     build_system_morphism {
         (* the components of a morphism f *)
         sys_setup_morph : Setup1 -> Setup2 ;
@@ -267,14 +265,14 @@ Record SystemMorphism
         sys_state_morph : State1 -> State2 ;
         sys_error_morph : Error1 -> Error2 ;
         (* coherence conditions *)
-        sys_init_coherence : forall c ctx s, 
-            result_functor sys_state_morph sys_error_morph 
-                (sys_init sys1 c ctx s) = 
+        sys_init_coherence : forall c ctx s,
+            result_functor sys_state_morph sys_error_morph
+                (sys_init sys1 c ctx s) =
             sys_init sys2 c ctx (sys_setup_morph s) ;
-        sys_recv_coherence : forall c ctx st op_msg, 
-            result_functor (fun '(st, l) => (sys_state_morph st, l)) sys_error_morph 
-                (sys_receive sys1 c ctx st op_msg) = 
-            sys_receive sys2 c ctx (sys_state_morph st) (option_map sys_msg_morph op_msg) ; 
+        sys_recv_coherence : forall c ctx st op_msg,
+            result_functor (fun '(st, l) => (sys_state_morph st, l)) sys_error_morph
+                (sys_receive sys1 c ctx st op_msg) =
+            sys_receive sys2 c ctx (sys_state_morph st) (option_map sys_msg_morph op_msg) ;
 }.
 
 (* a system morphism is in one-to-one correspondence with a morphism of contracts *)
@@ -474,13 +472,13 @@ Qed.
 Definition compose_sm (g : SystemMorphism sys2 sys3) (f : SystemMorphism sys1 sys2) :
     SystemMorphism sys1 sys3 := {|
     (* the components *)
-    sys_setup_morph := compose (sys_setup_morph sys2 sys3 g) (sys_setup_morph sys1 sys2 f) ; 
-    sys_msg_morph   := compose (sys_msg_morph   sys2 sys3 g) (sys_msg_morph   sys1 sys2 f) ; 
-    sys_state_morph := compose (sys_state_morph sys2 sys3 g) (sys_state_morph sys1 sys2 f) ; 
-    sys_error_morph := compose (sys_error_morph sys2 sys3 g) (sys_error_morph sys1 sys2 f) ; 
+    sys_setup_morph := compose (sys_setup_morph sys2 sys3 g) (sys_setup_morph sys1 sys2 f) ;
+    sys_msg_morph   := compose (sys_msg_morph   sys2 sys3 g) (sys_msg_morph   sys1 sys2 f) ;
+    sys_state_morph := compose (sys_state_morph sys2 sys3 g) (sys_state_morph sys1 sys2 f) ;
+    sys_error_morph := compose (sys_error_morph sys2 sys3 g) (sys_error_morph sys1 sys2 f) ;
     (* the coherence results *)
-    sys_init_coherence := sys_compose_init_coh g f ; 
-    sys_recv_coherence := sys_compose_recv_coh g f ; 
+    sys_init_coherence := sys_compose_init_coh g f ;
+    sys_recv_coherence := sys_compose_recv_coh g f ;
     |}.
 
 End SystemMorphismComposition.
@@ -492,7 +490,7 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1} 
+        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
         {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
         {sys3 : ContractSystem Setup3 Msg3 State3 Error3}
         {sys4 : ContractSystem Setup4 Msg4 State4 Error4}.
@@ -508,8 +506,8 @@ Proof. now apply eq_sm. Qed.
 
 (** Composition is associative *)
 Lemma compose_sm_assoc
-    (f : SystemMorphism sys1 sys2) 
-    (g : SystemMorphism sys2 sys3) 
+    (f : SystemMorphism sys1 sys2)
+    (g : SystemMorphism sys2 sys3)
     (h : SystemMorphism sys3 sys4) :
     compose_sm h (compose_sm g f) =
     compose_sm (compose_sm h g) f.
@@ -541,7 +539,7 @@ Definition systems_isomorphic
 (* isomorphism is an equivalence relation *)
 Lemma iso_sm_refl
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
-    (sys : ContractSystem Setup Msg State Error) : 
+    (sys : ContractSystem Setup Msg State Error) :
     systems_isomorphic sys sys.
 Proof.
     exists (id_sm sys), (id_sm sys).
@@ -553,8 +551,8 @@ Lemma iso_sm_sym
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) : 
-    systems_isomorphic sys1 sys2 -> 
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :
+    systems_isomorphic sys1 sys2 ->
     systems_isomorphic sys2 sys1.
 Proof.
     intro sys_iso.
@@ -566,7 +564,7 @@ Proof.
     -   apply f_id1.
 Qed.
 
-Lemma iso_sm_trans  
+Lemma iso_sm_trans
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
@@ -660,7 +658,7 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 
 Record SystemTraceMorphism
     (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) := 
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
     build_st_morph {
         (* a function *)
         st_state_morph : State1 -> State2 ;
@@ -672,10 +670,6 @@ Record SystemTraceMorphism
         sys_step_morph : forall sys_state1 sys_state2,
             SystemStep sys1 sys_state1 sys_state2 ->
             SystemStep sys2 (st_state_morph sys_state1) (st_state_morph sys_state2) ;
-        (* coherence 
-        sys_step_coh : forall from mid to step l,
-            sys_step_morph from mid step = sys_step_morph from mid step2 ->
-            sys_step_morph from to (snoc step1 l) = sys_step_morph from to (snoc step2 l) ; *)
     }.
 
 End SystemTraceMorphism.
@@ -685,7 +679,7 @@ End SystemTraceMorphism.
 Section IdentitySTMorphism.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition id_sys_genesis_fixpoint (sys : ContractSystem Setup Msg State Error) : 
+Definition id_sys_genesis_fixpoint (sys : ContractSystem Setup Msg State Error) :
     forall init_sys_state,
     is_genesis_sys_state sys init_sys_state ->
     is_genesis_sys_state sys (id init_sys_state).
@@ -698,7 +692,7 @@ Definition id_sys_step_morph (sys : ContractSystem Setup Msg State Error)
 
 Definition id_stm (sys : ContractSystem Setup Msg State Error) : SystemTraceMorphism sys sys := 
 {| 
-    st_state_morph := id ; 
+    st_state_morph := id ;
     sys_genesis_fixpoint := id_sys_genesis_fixpoint sys ;
     sys_step_morph := id_sys_step_morph sys ;
 |}.
@@ -751,7 +745,7 @@ Definition sys_genesis_compose
     (m2 : SystemTraceMorphism sys2 sys3) (m1 : SystemTraceMorphism sys1 sys2) :
     forall init_sys_state,
     is_genesis_sys_state sys1 init_sys_state ->
-    is_genesis_sys_state sys3 
+    is_genesis_sys_state sys3
         (compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) init_sys_state).
 Proof.
     destruct m2 as [smorph2 gen_fix2 step2].
@@ -762,21 +756,21 @@ Defined.
 
 Definition sys_step_compose
     (m2 : SystemTraceMorphism sys2 sys3) (m1 : SystemTraceMorphism sys1 sys2)
-    sys_state1 sys_state2 
+    sys_state1 sys_state2
     (step : SystemStep sys1 sys_state1 sys_state2) :
-    SystemStep sys3 
-        (compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) sys_state1) 
+    SystemStep sys3
+        (compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) sys_state1)
         (compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) sys_state2) :=
-    match m2, m1 with 
-    | build_st_morph _ _ smorph2 gen_fix2 step2, build_st_morph _ _ smorph1 gen_fix1 step1 => 
+    match m2, m1 with
+    | build_st_morph _ _ smorph2 gen_fix2 step2, build_st_morph _ _ smorph1 gen_fix1 step1 =>
         step2 (smorph1 sys_state1) (smorph1 sys_state2) (step1 sys_state1 sys_state2 step)
     end.
 
 Definition compose_stm
-    (m2 : SystemTraceMorphism sys2 sys3) 
-    (m1 : SystemTraceMorphism sys1 sys2) : SystemTraceMorphism sys1 sys3 := 
+    (m2 : SystemTraceMorphism sys2 sys3)
+    (m1 : SystemTraceMorphism sys1 sys2) : SystemTraceMorphism sys1 sys3 :=
 {| 
-    st_state_morph := compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) ; 
+    st_state_morph := compose (st_state_morph sys2 sys3 m2) (st_state_morph sys1 sys2 m1) ;
     sys_genesis_fixpoint := sys_genesis_compose m2 m1 ;
     sys_step_morph := sys_step_compose m2 m1 ;
 |}.
@@ -789,17 +783,17 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
-        { sys1 : ContractSystem Setup1 Msg1 State1 Error1} 
+        { sys1 : ContractSystem Setup1 Msg1 State1 Error1}
         { sys2 : ContractSystem Setup2 Msg2 State2 Error2}
         { sys3 : ContractSystem Setup3 Msg3 State3 Error3}
         { sys4 : ContractSystem Setup4 Msg4 State4 Error4}.
 
 (* Composition associative *)
-Lemma compose_stm_assoc 
+Lemma compose_stm_assoc
     (f : SystemTraceMorphism sys1 sys2)
     (g : SystemTraceMorphism sys2 sys3)
-    (h : SystemTraceMorphism sys3 sys4) : 
-    compose_stm h (compose_stm g f) = 
+    (h : SystemTraceMorphism sys3 sys4) :
+    compose_stm h (compose_stm g f) =
     compose_stm (compose_stm h g) f.
 Proof. now destruct f, g, h. Qed.
 
@@ -842,7 +836,7 @@ Definition systems_bisimilar
 (* bisimilarity is an equivalence relation *)
 Lemma sys_bisim_refl
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
-    (sys : ContractSystem Setup Msg State Error) : 
+    (sys : ContractSystem Setup Msg State Error) :
     systems_bisimilar sys sys.
 Proof.
     exists (id_stm sys), (id_stm sys).
@@ -854,8 +848,8 @@ Lemma sys_bisim_sym
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) : 
-    systems_bisimilar sys1 sys2 -> 
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :
+    systems_bisimilar sys1 sys2 ->
     systems_bisimilar sys2 sys1.
 Proof.
     intro sys_bisim.
@@ -914,14 +908,14 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
         {sys2 : ContractSystem Setup2 Msg2 State2 Error2}.
 
-Definition lift_sys_genesis (f : SystemMorphism sys1 sys2) : 
+Definition lift_sys_genesis (f : SystemMorphism sys1 sys2) :
     forall init_sys_state,
         is_genesis_sys_state sys1 init_sys_state ->
         is_genesis_sys_state sys2 (sys_state_morph sys1 sys2 f init_sys_state).
 Proof.
     destruct f as [setup_morph msg_morph state_morph error_morph i_coh r_coh].
     cbn.
-    intros * genesis. 
+    intros * genesis.
     unfold is_genesis_state in *.
     destruct genesis as [c [ctx [s init_coh]]].
     exists c, ctx, (setup_morph s).
@@ -930,7 +924,7 @@ Proof.
     now destruct (sys_init sys1 c ctx s).
 Defined.
 
-Definition lift_sys_step_morph (f : SystemMorphism sys1 sys2) : 
+Definition lift_sys_step_morph (f : SystemMorphism sys1 sys2) :
     forall sys_state1 sys_state2,
         SystemStep sys1 sys_state1 sys_state2 ->
         SystemStep sys2 
@@ -944,7 +938,7 @@ Proof.
     -   apply clnil.
     -   apply (snoc IHstep).
         destruct l as [seq_chain seq_ctx seq_msg seq_new_acts recv_step].
-        apply (build_sys_single_step sys2 (state_morph mid) (state_morph to) 
+        apply (build_sys_single_step sys2 (state_morph mid) (state_morph to)
             seq_chain seq_ctx (option_map msg_morph seq_msg) seq_new_acts).
         rewrite <- r_coh.
         unfold result_functor.
@@ -955,9 +949,9 @@ Defined.
 
 (** Lifting Theorem *)
 Definition sm_lift_stm (f : SystemMorphism sys1 sys2) : SystemTraceMorphism sys1 sys2 :=
-    build_st_morph sys1 sys2 
-        (sys_state_morph sys1 sys2 f) 
-        (lift_sys_genesis f) 
+    build_st_morph sys1 sys2
+        (sys_state_morph sys1 sys2 f)
+        (lift_sys_genesis f)
         (lift_sys_step_morph f).
 
 End LiftingTheorem.
@@ -997,8 +991,8 @@ Qed.
 
 (** Compositions lift to compositions *)
 Theorem sm_lift_stm_compose 
-    (g : SystemMorphism sys2 sys3) (f : SystemMorphism sys1 sys2) : 
-    sm_lift_stm (compose_sm g f) = 
+    (g : SystemMorphism sys2 sys3) (f : SystemMorphism sys1 sys2) :
+    sm_lift_stm (compose_sm g f) =
     compose_stm (sm_lift_stm g) (sm_lift_stm f).
 Proof.
     apply (eq_stm_dep sys1 sys3 (compose (sys_state_morph sys2 sys3 g) (sys_state_morph sys1 sys2 f))).
@@ -1007,7 +1001,7 @@ Proof.
     apply functional_extensionality_dep.
     intro st1'.
     apply functional_extensionality_dep.
-    intro sys_step. 
+    intro sys_step.
     induction sys_step.
     -   destruct g as [smorph_g msgmorph_g stmorph_g errmorph_g initcoh_g recvcoh_g].
         destruct f as [smorph_f msgmorph_f stmorph_f errmorph_f initcoh_f recvcoh_f].
@@ -1059,7 +1053,7 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {C1 : Contract Setup1 Msg1 State1 Error1}
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
-Definition lift_cm_to_sm (f : ContractMorphism C1 C2) : 
+Definition lift_cm_to_sm (f : ContractMorphism C1 C2) :
     SystemMorphism (singleton_sys C1) (singleton_sys C2).
 Proof.
     destruct f as [setup_morph msg_morph state_morph error_morph init_coherence recv_coherence].
