@@ -26,9 +26,25 @@ Context { Base : ChainBase }.
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
-(** Goal: 
-    - A family of versioned contracts C_f : for all version v, C_f v
-    - Forall v, C_f v -> C -> C_b which decomposes the upgradeability structure of C
+(** In this example, we show that an upgradeable contract can be decomposed 
+    into its so-called "version contracts" and "base contract." 
+    
+    The version contracts , which are a family of contracts 
+        C_f : forall version v, C_f v
+    is the family that delineates precisely what forms a given upgradeable 
+    contract can take through upgrades. It is the family of all possible 
+    upgrades.
+
+    The base contract, C_b, is the upgradeability structure.
+
+    In practice, for an upgradeable contract, the specification of the
+    upgradeability structure differs greatly from that of a given 
+    versioned contract. The latter is likely intended to perform an economic
+    role, while the former is likely governed by some game-theoretic incentive
+    scheme.
+
+    We decompose an upgradeable contract so that each constituent can be clearly
+    specified and reasoned about, independent of the other.
 *)
 
 Section ContractDefinitions.

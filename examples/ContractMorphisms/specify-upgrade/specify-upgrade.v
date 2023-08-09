@@ -19,14 +19,15 @@ Import ListNotations.
 Open Scope N_scope.
 Open Scope string.
 
+(** This example recalls the Uranium Finance hack of 2021 due to an incorrect 
+    upgrade:
+    
+    A constant `k` was changed from 1_000 to 10_000 in all but one of its 
+    instances in the contract.
 
-(** Example 5.3.1: 
-    This example recalls the Uranium Finance hack of 2021 due to an incorrect upgrade:
-    A constant `k` was changed from 1_000 to 10_000 in all but one of its instances 
-    in the contract.
+    This example illustrates how a contract upgrade can be *specified* using 
+    contract morphisms, and uses that example.
 
-    This example illustrates how a contract upgrade can be *specified* using contract 
-    morphisms, and uses that example.
     We have formulated this example to be as general as possible.
 *)
 
