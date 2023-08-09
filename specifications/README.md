@@ -1,25 +1,14 @@
 # Financial Contract Specifications
 
-This subdirectory houses specifications of various financial smart contracts.
+This is a subdirectory for abstract specifications of financial smart contracts.
+At the present, it only houses the structured pools specification and metaspecification; however, as other financial smart contracts have already been specified and verified in ConCert, we hope to add to this repository in order to grow a strong theory of financial smart contracts, including AMMs and DeFi.
 
-<!-- what/why we want abstract specifications -->
-Having specifications in isolation like this is useful for at least two reasons:
-1. If a contract specification is abstracted as an isolated object, we can reason about it from various angles, including its economic and upgradeability properties, and how it acts within a system of contracts
-1. Many financial smart contracts are designed to interact with other smart contracts which have a standard specification and interface, *e.g.* AMMs which are designed to intermediate trades between token contracts. If we have an abstracted specifications, we can reason rigorously about these interactions by assuming contracts which conform to the specification.
+The structured pool specification has two parts:
+1. The **specification** of the structured pool contract, and 
+1. The **metaspecification**, which considers an abstract contract satisfying the specification and reasons about its properties from there.
 
-<!-- which ones do we have rn 
-Thus far, we have the following "building block" contract specifications, which can be imported and used in implementing and reasoning about financial smart contracts:
+Metaspecifications can draw on a theory of AMMs and DeFi to formulate correct economic properties, or use theoretical tools such as bisimulations or contract morphisms.
 
-- FA2, a [multi-asset token standard](https://gitlab.com/tezos/tzip/-/blob/master/proposals/tzip-12/tzip-12.md)
-- Dexter2, a [formally verified AMM](https://dl.acm.org/doi/abs/10.1145/3573105.3575685) on the [Tezos](https://tezos.com/) blockchain
-- Structured Pools, a pooling contract for [tokenized carbon credits](https://derekhsorensen.com/docs/sorensen-tokenized-carbon-credits.pdf)
--->
-<!-- which ones do we have rn 
+We expect future contract specifications and metaspecifications added here to follow that same pattern, in order to have a well-specified and formally verified library of token and other contract standards.
 
-- FA1.2, an [approvable ledger token standard](https://gitlab.com/tezos/tzip/-/blob/master/proposals/tzip-7/tzip-7.md)
-
--->
-
-## An Abstract Specification
-
-TODO: design patterns for a specification; the structure of an abstract specification; how they are imported, etc; instructions for adding to this library of financial smart contracts.
+NB there is an FA2 specification file present in this repository, but it only contains the relevant types to an FA2 contract which the structured pool specification uses.
