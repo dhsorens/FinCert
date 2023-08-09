@@ -1,6 +1,6 @@
 # Examples with Contract Morphisms
 
-This repository houses some examples of using [contract morphisms](../../theories/ContractMorphisms.v) in specification and proof.
+This subdirectory houses some examples of using [contract morphisms](../../theories/ContractMorphisms.v) in specification and proof.
 
 -   [specify-upgrade/](specify-upgrade/specify-upgrade.v) is an example of specifying a contract upgrade using contract morphisms
 -   [backwards-compatible/](backwards-compatible/backwards-compatible.v) is an example of proving backwards compatibility with contract morphisms 
