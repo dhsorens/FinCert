@@ -4,9 +4,10 @@ From ConCert.Execution Require Import ContractCommon.
 From ConCert.Execution Require Import Monad.
 From ConCert.Execution Require Import ResultMonad.
 From ConCert.Execution Require Import Serializable.
-From ConCert.Execution Require Import ContractMorphisms.
 From ConCert.Utils Require Import RecordUpdate.
 From ConCert.Utils Require Import Extras.
+From FinCert.Meta Require Import ContractMorphisms.
+From FinCert.Meta Require Import ContractSystems.
 From Coq Require Import FunctionalExtensionality.
 From Coq Require Import Ensembles.
 From Coq Require Import ZArith_base.

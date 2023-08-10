@@ -5,7 +5,7 @@ From ConCert.Execution Require Import ContractCommon.
 From ConCert.Execution Require Import Monad.
 From ConCert.Execution Require Import ResultMonad.
 From ConCert.Execution Require Import Serializable.
-From ConCert.Execution Require Import ContractMorphisms.
+From FinCert.Meta Require Import ContractMorphisms.
 From ConCert.Utils Require Import RecordUpdate.
 From ConCert.Utils Require Import Extras.
 From Coq Require Import Ensembles.
@@ -38,23 +38,21 @@ Open Scope string.
 Section TransportHoare.
 Context { Base : ChainBase }.
 
-Context { setup storage error : Type }
-        `{setup_ser : Serializable setup}  `{stor_ser : Serializable storage}  
-        `{err_ser : Serializable error} `{storage_state : @State_Spec Base storage} 
-        `{err_err : Error_Spec error}.
+Context `{Serializable setup}  `{Serializable storage} `{Serializable error} 
+        `{@State_Spec Base storage} `{Error_Spec error}.
 
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
 Inductive entrypoint := 
-| Pool : pool_data -> entrypoint 
-| Unpool : unpool_data -> entrypoint
-| Null : trade_data -> entrypoint.
+| Pool (p : pool_data)
+| Unpool (u : unpool_data)
+| Null (t : trade_data).
 
 Inductive entrypoint' := 
-| Pool' : pool_data -> entrypoint'
-| Unpool' : unpool_data -> entrypoint'
-| Trade' : trade_data -> entrypoint'.
+| Pool' (p : pool_data)
+| Unpool' (u : unpool_data)
+| Trade' (t : trade_data).
 
 Context { other_entrypoint : Type }.
 
@@ -78,7 +76,7 @@ Global Instance entrypoint'_msg_spec : @Msg_Spec Base other_entrypoint entrypoin
     unpool := e'_unpool ; 
     trade := e'_trade ; 
     other := e'_other ; 
-}.    
+}.
 
 Section Serialization.
     Global Instance entrypoint_serializable : Serializable entrypoint. Admitted.
