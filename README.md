@@ -1,4 +1,4 @@
-# MetaCert: Meta Properties of Financial Smart Contracts
+# FinCert: Meta Properties of Financial Smart Contracts
 
 This repository contains theoretical tools for reasoning about *meta properties* of financial smart contracts. A contract's *meta properties* are those which are intended by, but out of scope of, the contract's specification.
 These can include anything from its economic or upgradeability properties, or how it behaves when considered within a system of contracts.
