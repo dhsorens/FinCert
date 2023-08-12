@@ -309,7 +309,7 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
-        { C1 : Contract Setup1 Msg1 State1 Error1 } 
+        { C1 : Contract Setup1 Msg1 State1 Error1 }
         { C2 : Contract Setup2 Msg2 State2 Error2 }
         { C3 : Contract Setup3 Msg3 State3 Error3 }
         { C4 : Contract Setup4 Msg4 State4 Error4 }.

@@ -66,24 +66,17 @@ End ContractTraceMorphism.
 Section IdentityCTMorphism.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}.
 
-Definition id_genesis_fixpoint_nopq (C : Contract Setup1 Msg1 State1 Error1)
-    init_cstate (gen_C : is_genesis_cstate C init_cstate) :
-    is_genesis_cstate C (id init_cstate) := gen_C.
+Definition id_genesis_fixpoint (C : Contract Setup1 Msg1 State1 Error1)
+    init_cstate
+    (gen_C : is_genesis_cstate C init_cstate) :
+    is_genesis_cstate C (id init_cstate) := 
+    gen_C.
 
-Definition id_genesis_fixpoint (C : Contract Setup1 Msg1 State1 Error1) :
-    forall init_cstate,
-    is_genesis_cstate C init_cstate ->
-    is_genesis_cstate C (id init_cstate).
-Proof. auto. Defined.
-
-Definition id_cstep_morph_nopq (C : Contract Setup1 Msg1 State1 Error1)
-(state1 : State1) (state2 : State1) (step : ContractStep C state1 state2) :
-ContractStep C (id state1) (id state2) := step.
-
-Definition id_cstep_morph (C : Contract Setup1 Msg1 State1 Error1) : forall state1 state2,
-    ContractStep C state1 state2 ->
-    ContractStep C (id state1) (id state2).
-Proof. auto. Defined.
+Definition id_cstep_morph (C : Contract Setup1 Msg1 State1 Error1)
+    state1 state2
+    (step : ContractStep C state1 state2) :
+    ContractStep C (id state1) (id state2) := 
+    step.
 
 Definition id_ctm (C : Contract Setup1 Msg1 State1 Error1) : ContractTraceMorphism C C := {|
     ct_state_morph := id ;
@@ -507,7 +500,7 @@ Record SystemTraceMorphism
     build_st_morph {
         (* a function *)
         st_state_morph : State1 -> State2 ;
-        (* init state C1 -> init state C2 *)
+        (* init state sys1 -> init state sys2 *)
         sys_genesis_fixpoint : forall init_sys_state,
             is_genesis_sys_state sys1 init_sys_state ->
             is_genesis_sys_state sys2 (st_state_morph init_sys_state) ;
@@ -924,6 +917,37 @@ Proof.
         now destruct (receive C1 c ctx st op_msg).
 Defined.
 
+Definition lift_ctm_to_stm (f : ContractTraceMorphism C1 C2) :
+    SystemTraceMorphism (singleton_sys C1) (singleton_sys C2).
+Proof.
+    destruct f as [ct_st_morph gen_fixp cstep_morph].
+    apply (build_st_morph (singleton_sys C1) (singleton_sys C2) ct_st_morph);
+    unfold singleton_sys, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
+    -   apply gen_fixp.
+    -   intros * step.
+        induction step; try apply clnil.
+        apply (snoc IHstep).
+        assert (ContractStep C2 (ct_st_morph mid) (ct_st_morph to)
+        -> SingleSystemStep (Node (Contract Setup2 Msg2 State2 Error2) C2 []) (ct_st_morph mid) (ct_st_morph to))
+        as H_step.
+        {   intro cstep.
+            destruct cstep as [c ctx msg nacts recv_ok].
+            apply (build_sys_single_step _ _ _ c ctx msg nacts).
+            unfold sys_receive.
+            cbn.
+            destruct (receive C2 c ctx (ct_st_morph mid) msg); auto.
+            now destruct t. }
+        apply H_step, cstep_morph.
+        clear H_step IHstep.
+        destruct l as [c ctx msg nacts recv_ok].
+        apply (build_contract_step C1 mid to c ctx msg nacts).
+        unfold sys_receive in recv_ok.
+        cbn in *.
+        destruct (receive C1 c ctx mid msg); auto.
+        destruct t.
+        now inversion recv_ok.
+Defined.
+
 End LiftCMtoSM.
 
 (* id lifts to id *)
@@ -977,6 +1001,27 @@ Proof.
     try rewrite is_iso_2;
     now rewrite lift_id_cm_to_id_sm.
 Qed.
+
+Lemma lift_id_ctm_to_id_stm 
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
+    {C : Contract Setup Msg State Error} : 
+    lift_ctm_to_stm (id_ctm C) = id_stm (singleton_sys C).
+Proof.
+    unfold lift_ctm_to_stm, id_ctm, id_stm, singleton_sys.
+    cbn.
+    f_equal.
+    apply functional_extensionality_dep.
+    intro st1.
+    apply functional_extensionality_dep.
+    intro st2.
+    apply functional_extensionality_dep.
+    intro step.
+    induction step; auto.
+Admitted. (* 
+    apply IHstep.
+    apply proof_irrelevance.
+Qed.
+*)
 
 End CMtoSM.
 

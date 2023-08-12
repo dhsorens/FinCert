@@ -35,3 +35,17 @@ Define **desirable economic properties**
 USE THESE TO STUDY DEXTER2 FROM BEFORE
 
 *)
+
+
+(* 
+
+abstract definition of an AMM and token contracts : 
+    - we can do that by working on Dexter2 and the token contracts
+
+you'd want to somehow study 
+
+You'd want some abstract study where you can spin up an arbitrary number of e.g. AMM, auction, or token contracts, and reason about how your contract behaves within that system ... 
+
+
+
+*)

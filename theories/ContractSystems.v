@@ -181,8 +181,11 @@ Proof.
                 (* the message was not intended for this contract, so we do nothing *)
                 | inr msg => Ok (st', nil)
                 end 
-            | None => (* TODO ? maybe just the id? *)
-                Ok (st', nil)
+            | None => (* if there is no message, we call the contract with None *)
+                match recv1 c ctx st1 None with 
+                | Ok (new_st1, nacts) => Ok ((new_st1, st2), nacts)
+                | Err e => Err (inl e)
+                end
             end).
 Defined.
 
@@ -218,8 +221,11 @@ Proof.
                     | Err e => Err (inr e)
                     end
                 end
-            | None => (* TODO ? maybe just the id? *)
-                Ok (st', nil)
+            | None => (* if there is no message, we call the contract with None *)
+                match recv2 c ctx st2 None with
+                | Ok (new_st2, nacts) => Ok ((st1, new_st2), nacts)
+                | Err e => Err (inr e)
+                end
             end).
 Defined.
 
