@@ -437,97 +437,6 @@ End ContractBisimulations.
 Section SystemBisimulations.
 Context {Base : ChainBase}.
 
-(** Define the notion of a contract system's trace, which is a chained list of 
-    a chained list of successful system calls *)
-Section SystemTrace.
-
-Section SingleSteps.
-Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
-
-(* system state stepping forward *)
-Record SingleSystemStep (sys : ContractPlaceGraph Setup Msg State Error)
-    (prev_sys_state next_sys_state : State) :=
-    build_sys_single_step {
-    sys_step_chain : Chain ;
-    sys_step_ctx : ContractCallContext ;
-    sys_step_msg : option Msg ;
-    sys_step_nacts : list ActionBody ;
-    (* we can call receive successfully *)
-    sys_recv_ok_step :
-        sys_receive sys sys_step_chain sys_step_ctx prev_sys_state sys_step_msg =
-        Ok (next_sys_state, sys_step_nacts) ;
-}.
-
-Definition ChainedSingleSteps (sys : ContractPlaceGraph Setup Msg State Error) :=
-    ChainedList State (SingleSystemStep sys).
-
-End SingleSteps.
-
-Record ContractSystem
-    (Setup Msg State Error : Type)
-    `{sys_set : Serializable Setup}
-    `{sys_msg : Serializable Msg}
-    `{sys_st  : Serializable State}
-    `{sys_err : Serializable Error} := 
-    build_contract_system {
-        sys_place : ContractPlaceGraph Setup Msg State Error ;
-        sys_link  : State -> State -> Type ;
-        (* the link graph has semantics in ChanedSingleSteps *)
-        sys_link_semantics : forall st1 st2,
-            sys_link st1 st2 -> 
-            ChainedSingleSteps sys_place st1 st2 ;
-    }.
-
-Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
-
-Section Aux.
-
-Definition sys_place' (sys : ContractSystem Setup Msg State Error) :=
-    sys_place _ _ _ _ sys.
-
-Definition sys_link' (sys : ContractSystem Setup Msg State Error) :=
-    sys_link _ _ _ _ sys.
-
-Definition sys_link_semantics' (sys : ContractSystem Setup Msg State Error) :=
-    sys_link_semantics _ _ _ _ sys.
-
-End Aux.
-
-Definition SystemStep (sys : ContractSystem Setup Msg State Error) :=
-    sys_link' sys.
-
-Definition SystemTrace (sys : ContractSystem Setup Msg State Error) :=
-    ChainedList State (SystemStep sys).
-
-Definition is_genesis_sys_state
-    (sys : ContractSystem Setup Msg State Error) (init_sys_state : State) : Prop :=
-    exists sys_init_chain sys_init_ctx sys_init_setup,
-    sys_init (sys_place' sys) sys_init_chain sys_init_ctx sys_init_setup =
-    Ok init_sys_state.
-
-Definition sys_state_reachable
-    (sys : ContractSystem Setup Msg State Error) (sys_state : State) : Prop :=
-    exists init_sys_state,
-    (* init_sys_state is a valid initial sys_state *)
-    is_genesis_sys_state sys init_sys_state /\
-    (* with a trace to sys_state *)
-    inhabited (SystemTrace sys init_sys_state sys_state).
-
-Lemma inhab_trace_trans (sys : ContractSystem Setup Msg State Error) :
-forall from mid to,
-    (SystemStep sys mid to) ->
-    inhabited (SystemTrace sys from mid) ->
-    inhabited (SystemTrace sys from to).
-Proof.
-    intros from mid to step.
-    apply inhabited_covariant.
-    intro mid_t.
-    apply (snoc mid_t step).
-Qed.
-
-End SystemTrace.
-
-
 Section SystemTraceMorphism.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
@@ -777,7 +686,7 @@ Proof.
     unfold lift_sys_step_morph, id_sm, trivial_sys, option_map, id_sys_step_morph.
     cbn.
     do 2 f_equal; auto.
-    destruct sys_step_msg0;
+    destruct sys_step_msg;
     apply f_equal;
     apply proof_irrelevance.
 Qed.
@@ -800,7 +709,7 @@ Proof.
     destruct g as [smorph_g msgmorph_g stmorph_g errmorph_g initcoh_g recvcoh_g].
     destruct f as [smorph_f msgmorph_f stmorph_f errmorph_f initcoh_f recvcoh_f].
     unfold lift_sys_step_morph, sys_step_compose, compose_sm.
-    destruct sys_step_msg0;
+    destruct sys_step_msg;
     cbn;
     f_equal;
     apply proof_irrelevance.
@@ -948,12 +857,12 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
 Definition lift_cm_to_sm (f : ContractMorphism C1 C2) :
-    SystemMorphism (singleton_sys C1) (singleton_sys C2).
+    SystemMorphism (singleton_place_graph C1) (singleton_place_graph C2).
 Proof.
     destruct f as [setup_morph msg_morph state_morph error_morph init_coherence recv_coherence].
-    apply (build_system_morphism (singleton_sys C1) (singleton_sys C2)
+    apply (build_system_morphism (singleton_place_graph C1) (singleton_place_graph C2)
         setup_morph msg_morph state_morph error_morph);
-    unfold singleton_sys, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
+    unfold singleton_place_graph, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
     -   apply init_coherence.
     -   intros.
         rewrite <- recv_coherence.
@@ -962,12 +871,12 @@ Proof.
 Defined.
 
 Definition lift_ctm_to_stm (f : ContractTraceMorphism C1 C2) :
-    SystemTraceMorphism (trivial_sys (singleton_sys C1)) (trivial_sys (singleton_sys C2)).
+    SystemTraceMorphism (trivial_sys (singleton_place_graph C1)) (trivial_sys (singleton_place_graph C2)).
 Proof.
     destruct f as [ct_st_morph gen_fixp cstep_morph].
     apply (build_st_morph 
-        (trivial_sys (singleton_sys C1)) (trivial_sys (singleton_sys C2)) ct_st_morph);
-    unfold singleton_sys, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
+        (trivial_sys (singleton_place_graph C1)) (trivial_sys (singleton_place_graph C2)) ct_st_morph);
+    unfold singleton_place_graph, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
     -   apply gen_fixp.
     -   intros * step.
         assert (ContractStep C2 (ct_st_morph sys_state1) (ct_st_morph sys_state2)
@@ -998,9 +907,9 @@ End LiftCMtoSM.
 Lemma lift_id_cm_to_id_sm 
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
     {C : Contract Setup Msg State Error} : 
-    lift_cm_to_sm (id_cm C) = id_sm (singleton_sys C).
+    lift_cm_to_sm (id_cm C) = id_sm (singleton_place_graph C).
 Proof.
-    unfold lift_cm_to_sm, id_cm, id_sm, singleton_sys.
+    unfold lift_cm_to_sm, id_cm, id_sm, singleton_place_graph.
     cbn.
     f_equal;
     apply proof_irrelevance.
@@ -1032,7 +941,7 @@ Lemma c_iso_csys_iso
     {C1 : Contract Setup1 Msg1 State1 Error1}
     {C2 : Contract Setup2 Msg2 State2 Error2} :
     contracts_isomorphic C1 C2 -> 
-    systems_isomorphic (singleton_sys C1) (singleton_sys C2).
+    systems_isomorphic (singleton_place_graph C1) (singleton_place_graph C2).
 Proof.
     intro c_iso.
     destruct c_iso as [f [g [is_iso_1 is_iso_2]]].

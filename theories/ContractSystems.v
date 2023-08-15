@@ -134,9 +134,9 @@ Definition sys_contract (sys : ContractPlaceGraph Setup Msg State Error) :=
 End SystemInterface.
 
 
-Section IterativeSystemBuild.
+Section IterativePlaceGraphBuild.
 (* the definition of a singleton system *)
-Definition singleton_sys 
+Definition singleton_place_graph 
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
     (C : Contract Setup Msg State Error) 
     : ContractPlaceGraph Setup Msg State Error := singleton_ntree C.
@@ -257,9 +257,92 @@ Definition nest
 
 End IterativeChild.
 
-End IterativeSystemBuild.
+End IterativePlaceGraphBuild.
 
 End PlaceGraph.
+
+(** Define the notion of a contract system's trace, which is a chained list of 
+    a chained list of successful system calls *)
+Section LinkGraph.
+Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
+
+(* system state stepping forward *)
+Record SingleSystemStep (sys : ContractPlaceGraph Setup Msg State Error)
+    (prev_sys_state next_sys_state : State) :=
+    build_sys_single_step {
+    sys_step_chain : Chain ;
+    sys_step_ctx : ContractCallContext ;
+    sys_step_msg : option Msg ;
+    sys_step_nacts : list ActionBody ;
+    (* we can call receive successfully *)
+    sys_recv_ok_step :
+        sys_receive sys sys_step_chain sys_step_ctx prev_sys_state sys_step_msg =
+        Ok (next_sys_state, sys_step_nacts) ;
+}.
+
+Definition ChainedSingleSteps (sys : ContractPlaceGraph Setup Msg State Error) :=
+    ChainedList State (SingleSystemStep sys).
+
+End LinkGraph.
+
+Record ContractSystem
+    (Setup Msg State Error : Type)
+    `{sys_set : Serializable Setup}
+    `{sys_msg : Serializable Msg}
+    `{sys_st  : Serializable State}
+    `{sys_err : Serializable Error} := 
+    build_contract_system {
+        (* the place and link graphs *)
+        sys_place : ContractPlaceGraph Setup Msg State Error ;
+        sys_link  : State -> State -> Type ;
+        (* the link graph has semantics in ChanedSingleSteps *)
+        sys_link_semantics : forall st1 st2,
+            sys_link st1 st2 -> 
+            ChainedSingleSteps sys_place st1 st2 ;
+    }.
+
+Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
+
+Section Aux.
+
+Definition sys_place' (sys : ContractSystem Setup Msg State Error) := sys_place _ _ _ _ sys.
+Definition sys_link' (sys : ContractSystem Setup Msg State Error) := sys_link _ _ _ _ sys.
+Definition sys_link_semantics' (sys : ContractSystem Setup Msg State Error) :=
+    sys_link_semantics _ _ _ _ sys.
+
+End Aux.
+
+Definition SystemStep (sys : ContractSystem Setup Msg State Error) :=
+    sys_link' sys.
+
+Definition SystemTrace (sys : ContractSystem Setup Msg State Error) :=
+    ChainedList State (SystemStep sys).
+
+Definition is_genesis_sys_state
+    (sys : ContractSystem Setup Msg State Error) (init_sys_state : State) : Prop :=
+    exists sys_init_chain sys_init_ctx sys_init_setup,
+    sys_init (sys_place' sys) sys_init_chain sys_init_ctx sys_init_setup =
+    Ok init_sys_state.
+
+Definition sys_state_reachable
+    (sys : ContractSystem Setup Msg State Error) (sys_state : State) : Prop :=
+    exists init_sys_state,
+    (* init_sys_state is a valid initial sys_state *)
+    is_genesis_sys_state sys init_sys_state /\
+    (* with a trace to sys_state *)
+    inhabited (SystemTrace sys init_sys_state sys_state).
+
+Lemma inhab_trace_trans (sys : ContractSystem Setup Msg State Error) :
+forall from mid to,
+    (SystemStep sys mid to) ->
+    inhabited (SystemTrace sys from mid) ->
+    inhabited (SystemTrace sys from to).
+Proof.
+    intros from mid to step.
+    apply inhabited_covariant.
+    intro mid_t.
+    apply (snoc mid_t step).
+Qed.
 
 End ContractSystems.
 
