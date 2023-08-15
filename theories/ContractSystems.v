@@ -33,9 +33,7 @@ Import ListNotations.
 Section ContractSystems.
 Context {Base : ChainBase}.
 
-Section ContractBigraph.
-
-Section LinkGraph.
+Section PlaceGraph.
 
 Section ntree.
 
@@ -261,16 +259,7 @@ End IterativeChild.
 
 End IterativeSystemBuild.
 
-End LinkGraph.
-
-(** The place graph, a graph structure independent of the link graph on constituent contracts *)
-Section PlaceGraph.
-
-(* we leave this for future work *)
-
 End PlaceGraph.
-
-End ContractBigraph.
 
 End ContractSystems.
 
