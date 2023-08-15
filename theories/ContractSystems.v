@@ -82,7 +82,7 @@ Fixpoint add_tree_at_leaf {T} (orig append : ntree T) (leaf_index : list nat) : 
 
 End ntree.
 
-Definition ContractSystem
+Definition ContractPlaceGraph
     (Setup Msg State Error : Type)
     `{sys_set : Serializable Setup}
     `{sys_msg : Serializable Msg}
@@ -95,7 +95,7 @@ Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serial
 
 (* system init : just initialize the root, since all contract init behaves identically *)
 Definition sys_init
-    (sys : ContractSystem Setup Msg State Error)
+    (sys : ContractPlaceGraph Setup Msg State Error)
     (c : Chain)
     (ctx : ContractCallContext)
     (s : Setup) : result State Error := 
@@ -108,7 +108,7 @@ Definition sys_init
     since systems are iteratively built so that a message not intended for a given contract 
     returns the identity, this targets the contract in question and leaves the rest untouched. *)
 Definition sys_receive
-    (sys : ContractSystem Setup Msg State Error)
+    (sys : ContractPlaceGraph Setup Msg State Error)
     (c : Chain)
     (ctx : ContractCallContext)
     (st : State)
@@ -128,7 +128,7 @@ Definition sys_receive
     (Ok (st, nil)).
 
 (* thes two functions give us a contract *)
-Definition sys_contract (sys : ContractSystem Setup Msg State Error) := 
+Definition sys_contract (sys : ContractPlaceGraph Setup Msg State Error) := 
     build_contract (sys_init sys) (sys_receive sys).
 
 End SystemInterface.
@@ -139,7 +139,7 @@ Section IterativeSystemBuild.
 Definition singleton_sys 
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
     (C : Contract Setup Msg State Error) 
-    : ContractSystem Setup Msg State Error := singleton_ntree C.
+    : ContractPlaceGraph Setup Msg State Error := singleton_ntree C.
 
 Section IterativeSum.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
@@ -235,9 +235,9 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 
 (* add a contract as a child to a system(/nest contracts) *)
 Definition sys_add_child_r
-    (sys : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys : ContractPlaceGraph Setup1 Msg1 State1 Error1)
     (C : Contract Setup2 Msg2 State2 Error2) :
-    ContractSystem (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2) := 
+    ContractPlaceGraph (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2) := 
     let T := (Contract (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2)) in 
     match sys with
     | Node _ root_contract _ =>
@@ -251,7 +251,7 @@ Definition sys_add_child_r
 Definition nest 
     (C1 : Contract Setup1 Msg1 State1 Error1)
     (C2 : Contract Setup2 Msg2 State2 Error2) : 
-    ContractSystem (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2) := 
+    ContractPlaceGraph (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2) := 
     let T := (Contract (Setup1 * Setup2) (Msg1 + Msg2) (State1 * State2) (Error1 + Error2)) in 
     Node T (c_sum_l C1 C2) [Node T (c_sum_r C1 C2) nil].
 
@@ -274,8 +274,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 Record SystemMorphism
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :=
     build_system_morphism {
         (* the components of a morphism *)
         sys_setup_morph : Setup1 -> Setup2 ;
@@ -296,8 +296,8 @@ Record SystemMorphism
 (* a system morphism is in one-to-one correspondence with a morphism of contracts,
     when we consider a system as its own contract *)
 Definition cm_to_sysm
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2)
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2)
     (f : ContractMorphism (sys_contract sys1) (sys_contract sys2)) : SystemMorphism sys1 sys2.
 Proof.
     destruct f.
@@ -306,8 +306,8 @@ Proof.
 Defined.
 
 Definition sysm_to_cm
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2)
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2)
     (f : SystemMorphism sys1 sys2) : ContractMorphism (sys_contract sys1) (sys_contract sys2).
 Proof.
     destruct f as [sys_setup_morph sys_msg_morph sys_state_morph sys_error_morph sys_init_coh sys_recv_coh].
@@ -317,8 +317,8 @@ Proof.
 Defined.
 
 Lemma cm_sysm_one_to_one
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :
     compose (cm_to_sysm sys1 sys2) (sysm_to_cm sys1 sys2) = id /\
     compose (sysm_to_cm sys1 sys2) (cm_to_sysm sys1 sys2) = id.
 Proof.
@@ -336,7 +336,7 @@ End SystemMorphismDefinition.
 Section IdentitySystemMorphism.
 Context `{Serializable Msg} `{Serializable Setup} `{Serializable State} `{Serializable Error}.
 
-Lemma sys_init_coherence_id (sys : ContractSystem Setup Msg State Error) : 
+Lemma sys_init_coherence_id (sys : ContractPlaceGraph Setup Msg State Error) : 
     forall c ctx s,
     result_functor id id (sys_init sys c ctx s) = 
     sys_init sys c ctx s.
@@ -346,7 +346,7 @@ Proof.
     now destruct (sys_init sys c ctx s).
 Qed.
 
-Lemma sys_recv_coherence_id (sys : ContractSystem Setup Msg State Error) :
+Lemma sys_recv_coherence_id (sys : ContractPlaceGraph Setup Msg State Error) :
     forall c ctx st op_msg,
     result_functor
         (fun '(st, l) => (id st, l)) id
@@ -362,7 +362,7 @@ Proof.
 Qed.
 
 (** The identity morphism *)
-Definition id_sm (sys : ContractSystem Setup Msg State Error) : SystemMorphism sys sys := {|
+Definition id_sm (sys : ContractPlaceGraph Setup Msg State Error) : SystemMorphism sys sys := {|
         (* components *)
         sys_setup_morph := id ;
         sys_msg_morph   := id ; 
@@ -380,8 +380,8 @@ End IdentitySystemMorphism.
 Section EqualityOfSystemMorphisms.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1} 
-        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}.
+        {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1} 
+        {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}.
 
 Lemma eq_sm : 
     forall (f g : SystemMorphism sys1 sys2),
@@ -442,9 +442,9 @@ Section SystemMorphismComposition.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-        { sys1 : ContractSystem Setup1 Msg1 State1 Error1} 
-        { sys2 : ContractSystem Setup2 Msg2 State2 Error2}
-        { sys3 : ContractSystem Setup3 Msg3 State3 Error3}.
+        { sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1} 
+        { sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}
+        { sys3 : ContractPlaceGraph Setup3 Msg3 State3 Error3}.
 
 Lemma sys_compose_init_coh (g : SystemMorphism sys2 sys3) (f : SystemMorphism sys1 sys2) : 
     let sys_setup_morph' := (compose (sys_setup_morph sys2 sys3 g) (sys_setup_morph sys1 sys2 f)) in 
@@ -510,10 +510,10 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
-        {sys3 : ContractSystem Setup3 Msg3 State3 Error3}
-        {sys4 : ContractSystem Setup4 Msg4 State4 Error4}.
+        {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+        {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}
+        {sys3 : ContractPlaceGraph Setup3 Msg3 State3 Error3}
+        {sys4 : ContractPlaceGraph Setup4 Msg4 State4 Error4}.
 
 (** Composition with the Identity morphism is trivial *)
 Lemma compose_id_sm_left (f : SystemMorphism sys1 sys2) :
@@ -542,8 +542,8 @@ Section SystemIsomorphisms.
 Definition is_iso_sm
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-    {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
+    {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+    {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}
     (m1 : SystemMorphism sys1 sys2) (m2 : SystemMorphism sys2 sys1) :=
     compose_sm m2 m1 = id_sm sys1 /\
     compose_sm m1 m2 = id_sm sys2.
@@ -552,14 +552,14 @@ Definition is_iso_sm
 Definition systems_isomorphic
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :=
     exists (f : SystemMorphism sys1 sys2) (g : SystemMorphism sys2 sys1),
     is_iso_sm f g.
 
 Lemma iso_sm_reflexive
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
-    (sys : ContractSystem Setup Msg State Error) :
+    (sys : ContractPlaceGraph Setup Msg State Error) :
     systems_isomorphic sys sys.
 Proof.
     exists (id_sm sys), (id_sm sys).
@@ -571,8 +571,8 @@ Qed.
 Lemma iso_sm_symmetric
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :
     systems_isomorphic sys1 sys2 ->
     systems_isomorphic sys2 sys1.
 Proof.
@@ -589,9 +589,9 @@ Lemma iso_sm_transitive
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-    {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-    {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
-    {sys3 : ContractSystem Setup3 Msg3 State3 Error3} :
+    {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+    {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}
+    {sys3 : ContractPlaceGraph Setup3 Msg3 State3 Error3} :
     systems_isomorphic sys1 sys2 /\ systems_isomorphic sys2 sys3 ->
     systems_isomorphic sys1 sys3.
 Proof.

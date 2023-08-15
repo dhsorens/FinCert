@@ -445,7 +445,7 @@ Section SingleSteps.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
 (* system state stepping forward *)
-Record SingleSystemStep (sys : ContractSystem Setup Msg State Error)
+Record SingleSystemStep (sys : ContractPlaceGraph Setup Msg State Error)
     (prev_sys_state next_sys_state : State) :=
     build_sys_single_step {
     sys_step_chain : Chain ;
@@ -458,19 +458,19 @@ Record SingleSystemStep (sys : ContractSystem Setup Msg State Error)
         Ok (next_sys_state, sys_step_nacts) ;
 }.
 
-Definition ChainedSingleSteps (sys : ContractSystem Setup Msg State Error) :=
+Definition ChainedSingleSteps (sys : ContractPlaceGraph Setup Msg State Error) :=
     ChainedList State (SingleSystemStep sys).
 
 End SingleSteps.
 
-Record ContractSystem2
+Record ContractSystem
     (Setup Msg State Error : Type)
     `{sys_set : Serializable Setup}
     `{sys_msg : Serializable Msg}
     `{sys_st  : Serializable State}
     `{sys_err : Serializable Error} := 
     build_contract_system {
-        sys_place : ContractSystem Setup Msg State Error ;
+        sys_place : ContractPlaceGraph Setup Msg State Error ;
         sys_link  : State -> State -> Type ;
         (* the link graph has semantics in ChanedSingleSteps *)
         sys_link_semantics : forall st1 st2,
@@ -482,38 +482,38 @@ Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serial
 
 Section Aux.
 
-Definition sys_place' (sys : ContractSystem2 Setup Msg State Error) :=
+Definition sys_place' (sys : ContractSystem Setup Msg State Error) :=
     sys_place _ _ _ _ sys.
 
-Definition sys_link' (sys : ContractSystem2 Setup Msg State Error) :=
+Definition sys_link' (sys : ContractSystem Setup Msg State Error) :=
     sys_link _ _ _ _ sys.
 
-Definition sys_link_semantics' (sys : ContractSystem2 Setup Msg State Error) :=
+Definition sys_link_semantics' (sys : ContractSystem Setup Msg State Error) :=
     sys_link_semantics _ _ _ _ sys.
 
 End Aux.
 
-Definition SystemStep (sys : ContractSystem2 Setup Msg State Error) :=
+Definition SystemStep (sys : ContractSystem Setup Msg State Error) :=
     sys_link' sys.
 
-Definition SystemTrace (sys : ContractSystem2 Setup Msg State Error) :=
+Definition SystemTrace (sys : ContractSystem Setup Msg State Error) :=
     ChainedList State (SystemStep sys).
 
 Definition is_genesis_sys_state
-    (sys : ContractSystem2 Setup Msg State Error) (init_sys_state : State) : Prop :=
+    (sys : ContractSystem Setup Msg State Error) (init_sys_state : State) : Prop :=
     exists sys_init_chain sys_init_ctx sys_init_setup,
     sys_init (sys_place' sys) sys_init_chain sys_init_ctx sys_init_setup =
     Ok init_sys_state.
 
 Definition sys_state_reachable
-    (sys : ContractSystem2 Setup Msg State Error) (sys_state : State) : Prop :=
+    (sys : ContractSystem Setup Msg State Error) (sys_state : State) : Prop :=
     exists init_sys_state,
     (* init_sys_state is a valid initial sys_state *)
     is_genesis_sys_state sys init_sys_state /\
     (* with a trace to sys_state *)
     inhabited (SystemTrace sys init_sys_state sys_state).
 
-Lemma inhab_trace_trans (sys : ContractSystem2 Setup Msg State Error) :
+Lemma inhab_trace_trans (sys : ContractSystem Setup Msg State Error) :
 forall from mid to,
     (SystemStep sys mid to) ->
     inhabited (SystemTrace sys from mid) ->
@@ -533,8 +533,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 Record SystemTraceMorphism
-    (sys1 : ContractSystem2 Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem2 Setup2 Msg2 State2 Error2) :=
+    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
     build_st_morph {
         (* a function *)
         st_state_morph : State1 -> State2 ;
@@ -555,18 +555,18 @@ End SystemTraceMorphism.
 Section IdentitySTMorphism.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition id_sys_genesis_fixpoint (sys : ContractSystem2 Setup Msg State Error) :
+Definition id_sys_genesis_fixpoint (sys : ContractSystem Setup Msg State Error) :
     forall init_sys_state,
     is_genesis_sys_state sys init_sys_state ->
     is_genesis_sys_state sys (id init_sys_state).
 Proof. auto. Defined.
 
-Definition id_sys_step_morph (sys : ContractSystem2 Setup Msg State Error)
+Definition id_sys_step_morph (sys : ContractSystem Setup Msg State Error)
     sys_state1 sys_state2 (step : SystemStep sys sys_state1 sys_state2) :
     SystemStep sys (id sys_state1) (id sys_state2) :=
     step.
 
-Definition id_stm (sys : ContractSystem2 Setup Msg State Error) : SystemTraceMorphism sys sys := 
+Definition id_stm (sys : ContractSystem Setup Msg State Error) : SystemTraceMorphism sys sys := 
 {| 
     st_state_morph := id ;
     sys_genesis_fixpoint := id_sys_genesis_fixpoint sys ;
@@ -582,8 +582,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 Lemma eq_stm_dep
-    (sys1 : ContractSystem2 Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem2 Setup2 Msg2 State2 Error2)
+    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2)
     (st_st_m : State1 -> State2)
     sys_gen_fix1 sys_gen_fix2
     (sys_step_m1 sys_step_m2 : forall sys_state1 sys_state2,
@@ -611,9 +611,9 @@ Section STMorphismComposition.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-        {sys1 : ContractSystem2 Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem2 Setup2 Msg2 State2 Error2}
-        {sys3 : ContractSystem2 Setup3 Msg3 State3 Error3}.
+        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
+        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
+        {sys3 : ContractSystem Setup3 Msg3 State3 Error3}.
 
 Definition sys_genesis_compose
     (m2 : SystemTraceMorphism sys2 sys3) (m1 : SystemTraceMorphism sys1 sys2)
@@ -655,10 +655,10 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
-        { sys1 : ContractSystem2 Setup1 Msg1 State1 Error1}
-        { sys2 : ContractSystem2 Setup2 Msg2 State2 Error2}
-        { sys3 : ContractSystem2 Setup3 Msg3 State3 Error3}
-        { sys4 : ContractSystem2 Setup4 Msg4 State4 Error4}.
+        { sys1 : ContractSystem Setup1 Msg1 State1 Error1}
+        { sys2 : ContractSystem Setup2 Msg2 State2 Error2}
+        { sys3 : ContractSystem Setup3 Msg3 State3 Error3}
+        { sys4 : ContractSystem Setup4 Msg4 State4 Error4}.
 
 (* Composition is associative *)
 Lemma compose_stm_assoc
@@ -687,15 +687,15 @@ Section LiftingTheorem.
 Section TrivialLinkSys.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition triv_link (sys : ContractSystem Setup Msg State Error) st1 st2 := 
+Definition triv_link (sys : ContractPlaceGraph Setup Msg State Error) st1 st2 := 
     SingleSystemStep sys st1 st2.
 
-Definition trivial_link_semantics (sys : ContractSystem Setup Msg State Error) 
+Definition trivial_link_semantics (sys : ContractPlaceGraph Setup Msg State Error) 
     st1 st2 (step : triv_link sys st1 st2) :
     ChainedSingleSteps sys st1 st2 :=
     (snoc clnil step).
 
-Definition trivial_sys (sys : ContractSystem Setup Msg State Error) := {|
+Definition trivial_sys (sys : ContractPlaceGraph Setup Msg State Error) := {|
     sys_place := sys ;
     sys_link := triv_link sys ;
     sys_link_semantics := trivial_link_semantics sys ; 
@@ -705,8 +705,8 @@ End TrivialLinkSys.
 
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}.
+        {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+        {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}.
 
 Definition lift_sys_genesis (f : SystemMorphism sys1 sys2) :
     forall init_sys_state,
@@ -758,9 +758,9 @@ Section LiftingTheoremResults.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
-        {sys3 : ContractSystem Setup3 Msg3 State3 Error3}.
+        {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+        {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}
+        {sys3 : ContractPlaceGraph Setup3 Msg3 State3 Error3}.
 
 (* id lifts to id *)
 Theorem sm_lift_stm_id : 
@@ -815,8 +815,8 @@ Section SystemBisimulation.
 Section SystemTraceIsomorphism.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        {sys1 : ContractSystem2 Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem2 Setup2 Msg2 State2 Error2}.
+        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
+        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}.
 
 (** A bisimulation of systems, or an isomorphism of system traces *)
 Definition is_iso_stm
@@ -830,8 +830,8 @@ End SystemTraceIsomorphism.
 Section IsomorphismLift.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-        {sys2 : ContractSystem Setup2 Msg2 State2 Error2}.
+        {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+        {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2}.
 
 (* system isomorphism -> system trace isomorphism *)
 Corollary siso_to_stiso (f : SystemMorphism sys1 sys2) (g : SystemMorphism sys2 sys1) :
@@ -853,15 +853,15 @@ End IsomorphismLift.
 Definition systems_bisimilar 
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    (sys1 : ContractSystem2 Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem2 Setup2 Msg2 State2 Error2) :=
+    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :=
     exists (f : SystemTraceMorphism sys1 sys2) (g : SystemTraceMorphism sys2 sys1),
     is_iso_stm f g.
 
 (* bisimilarity is an equivalence relation *)
 Lemma sys_bisim_refl
     `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
-    (sys : ContractSystem2 Setup Msg State Error) :
+    (sys : ContractSystem Setup Msg State Error) :
     systems_bisimilar sys sys.
 Proof.
     exists (id_stm sys), (id_stm sys).
@@ -872,8 +872,8 @@ Qed.
 Lemma sys_bisim_sym
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    (sys1 : ContractSystem2 Setup1 Msg1 State1 Error1)
-    (sys2 : ContractSystem2 Setup2 Msg2 State2 Error2) :
+    (sys1 : ContractSystem Setup1 Msg1 State1 Error1)
+    (sys2 : ContractSystem Setup2 Msg2 State2 Error2) :
     systems_bisimilar sys1 sys2 ->
     systems_bisimilar sys2 sys1.
 Proof.
@@ -892,9 +892,9 @@ Lemma iso_stm_trans
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-    {sys1 : ContractSystem2 Setup1 Msg1 State1 Error1}
-    {sys2 : ContractSystem2 Setup2 Msg2 State2 Error2}
-    {sys3 : ContractSystem2 Setup3 Msg3 State3 Error3} :
+    {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
+    {sys2 : ContractSystem Setup2 Msg2 State2 Error2}
+    {sys3 : ContractSystem Setup3 Msg3 State3 Error3} :
     systems_bisimilar sys1 sys2 /\ systems_bisimilar sys2 sys3 ->
     systems_bisimilar sys1 sys3.
 Proof.
@@ -922,8 +922,8 @@ Qed.
 Theorem sys_iso_to_bisim
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    {sys1 : ContractSystem Setup1 Msg1 State1 Error1}
-    {sys2 : ContractSystem Setup2 Msg2 State2 Error2} :
+    {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
+    {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2} :
     systems_isomorphic sys1 sys2 -> systems_bisimilar (trivial_sys sys1) (trivial_sys sys2).
 Proof.
     intro sys_iso.
