@@ -1,6 +1,9 @@
 (* A theory of AMMs and DeFi, embedded in Coq 
     This is an outline of future work that leverages morphisms, bisimulations,
     and meta specifications to create a theory of AMMs and DeFi, embedded in Coq.
+
+    Below is a rough sketch of what is needed, and a rough outline of 
+    what development of a formalized theory of DeFi might look like.
 *)
 
 From Coq Require Import Basics.
@@ -21,31 +24,42 @@ From FinCert.Meta Require Import Bisimulation.
 
 Import ListNotations.
 
-(*
+(* What is needed for a theory of DeFi:
+    - Process-algebraic semantics which build off the bigraph encoding in 
+        FinCert.Meta.ContractSystems
+    - Formalizations and axiomatizations of key building blocks of DeFi, 
+        including:
+        - Token contracts (FA2, FA1.2, etc.)
+        - AMMs (a la Dexter2)
+        - other kinds of DEXs such as auctions
+        - etc.
 
-Define **desirable economic properties**
-
-- start with some model of "what an AMM is" -- can be in terms of one contract, or drawing on abstract specifications, e.g. the token specifications
-
-- not only do we have a specification (& metaspec) of a specific AMM, but we can 
-    **further abstract** from there to prove properties of AMMs
-
-- you need contraction over the link graph to really do this ... this is very hard.
-
-USE THESE TO STUDY DEXTER2 FROM BEFORE
-
+    With these we can build a theory of AMMs and DeFi in roughly the 
+    following structure:
 *)
 
 
-(* 
+Section Primitives.
 
-abstract definition of an AMM and token contracts : 
-    - we can do that by working on Dexter2 and the token contracts
-
-you'd want to somehow study 
-
-You'd want some abstract study where you can spin up an arbitrary number of e.g. AMM, auction, or token contracts, and reason about how your contract behaves within that system ... 
-
-
-
+(* a formal definition of key primitives and atomic abstractions such as:
+    - swaps
+    - swap rate
+    - exchange rate
+    - liquidity provider
+    - liquidity
 *)
+
+
+End Primitives.
+
+
+Section Properties.
+
+(* a formal derivation of key properties, such as:
+    - demand sensitivity 
+    - incentive consistency
+    - positive trading cost
+    - zero-impact liquidity change
+*)
+
+End Properties.
