@@ -48,7 +48,7 @@ Record ContractTraceMorphism
     (C1 : Contract Setup1 Msg1 State1 Error1)
     (C2 : Contract Setup2 Msg2 State2 Error2) :=
     build_ct_morph {
-        (* a function *)
+        (* a function of state types *)
         ct_state_morph : State1 -> State2 ;
         (* init state C1 -> init state C2 *)
         genesis_fixpoint : forall init_cstate,
@@ -464,11 +464,11 @@ End SystemTraceMorphism.
 Section IdentitySTMorphism.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition id_sys_genesis_fixpoint (sys : ContractSystem Setup Msg State Error) :
-    forall init_sys_state,
-    is_genesis_sys_state sys init_sys_state ->
-    is_genesis_sys_state sys (id init_sys_state).
-Proof. auto. Defined.
+Definition id_sys_genesis_fixpoint (sys : ContractSystem Setup Msg State Error)
+    init_sys_state
+    (gen_sys : is_genesis_sys_state sys init_sys_state) :
+    is_genesis_sys_state sys (id init_sys_state) :=
+    gen_sys.
 
 Definition id_sys_step_morph (sys : ContractSystem Setup Msg State Error)
     sys_state1 sys_state2 (step : SystemStep sys sys_state1 sys_state2) :
@@ -593,24 +593,24 @@ End STMorphismCompositionResults.
 (** System morphisms lift to system trace morphisms with the trivial link graph *)
 Section LiftingTheorem.
 
-Section TrivialLinkSys.
+Section DiscreetLinkSys.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition triv_link (sys : ContractPlaceGraph Setup Msg State Error) st1 st2 := 
+Definition discreet_link (sys : ContractPlaceGraph Setup Msg State Error) st1 st2 := 
     SingleSystemStep sys st1 st2.
 
-Definition trivial_link_semantics (sys : ContractPlaceGraph Setup Msg State Error) 
-    st1 st2 (step : triv_link sys st1 st2) :
+Definition discreet_link_semantics (sys : ContractPlaceGraph Setup Msg State Error) 
+    st1 st2 (step : discreet_link sys st1 st2) :
     ChainedSingleSteps sys st1 st2 :=
     (snoc clnil step).
 
-Definition trivial_sys (sys : ContractPlaceGraph Setup Msg State Error) := {|
+Definition discreet_sys (sys : ContractPlaceGraph Setup Msg State Error) := {|
     sys_place := sys ;
-    sys_link := triv_link sys ;
-    sys_link_semantics := trivial_link_semantics sys ; 
+    sys_link := discreet_link sys ;
+    sys_link_semantics := discreet_link_semantics sys ; 
 |}.
 
-End TrivialLinkSys.
+End DiscreetLinkSys.
 
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
@@ -619,8 +619,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 
 Definition lift_sys_genesis (f : SystemMorphism sys1 sys2) :
     forall init_sys_state,
-        is_genesis_sys_state (trivial_sys sys1) init_sys_state ->
-        is_genesis_sys_state (trivial_sys sys2) (sys_state_morph sys1 sys2 f init_sys_state).
+        is_genesis_sys_state (discreet_sys sys1) init_sys_state ->
+        is_genesis_sys_state (discreet_sys sys2) (sys_state_morph sys1 sys2 f init_sys_state).
 Proof.
     destruct f as [setup_morph msg_morph state_morph error_morph i_coh r_coh].
     cbn.
@@ -636,8 +636,8 @@ Defined.
 
 Definition lift_sys_step_morph (f : SystemMorphism sys1 sys2) :
     forall sys_state1 sys_state2,
-        SystemStep (trivial_sys sys1) sys_state1 sys_state2 ->
-        SystemStep (trivial_sys sys2)
+        SystemStep (discreet_sys sys1) sys_state1 sys_state2 ->
+        SystemStep (discreet_sys sys2)
             (sys_state_morph sys1 sys2 f sys_state1)
             (sys_state_morph sys1 sys2 f sys_state2).
 Proof.
@@ -656,7 +656,7 @@ Defined.
 
 (** Lifting Theorem *)
 Definition sm_lift_stm (f : SystemMorphism sys1 sys2) : 
-    SystemTraceMorphism (trivial_sys sys1) (trivial_sys sys2) :=
+    SystemTraceMorphism (discreet_sys sys1) (discreet_sys sys2) :=
     build_st_morph _ _ (sys_state_morph _ _ f) (lift_sys_genesis f) (lift_sys_step_morph f).
 
 End LiftingTheorem.
@@ -673,9 +673,9 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 
 (* id lifts to id *)
 Theorem sm_lift_stm_id : 
-    sm_lift_stm (id_sm sys1) = id_stm (trivial_sys sys1).
+    sm_lift_stm (id_sm sys1) = id_stm (discreet_sys sys1).
 Proof.
-    apply (eq_stm_dep (trivial_sys sys1) (trivial_sys sys1) (@id State1)).
+    apply (eq_stm_dep (discreet_sys sys1) (discreet_sys sys1) (@id State1)).
     apply functional_extensionality_dep.
     intro st1.
     apply functional_extensionality_dep.
@@ -683,7 +683,7 @@ Proof.
     apply functional_extensionality_dep.
     intro sys_step.
     destruct sys_step.
-    unfold lift_sys_step_morph, id_sm, trivial_sys, option_map, id_sys_step_morph.
+    unfold lift_sys_step_morph, id_sm, discreet_sys, option_map, id_sys_step_morph.
     cbn.
     do 2 f_equal; auto.
     destruct sys_step_msg;
@@ -697,7 +697,7 @@ Theorem sm_lift_stm_compose
     sm_lift_stm (compose_sm g f) =
     compose_stm (sm_lift_stm g) (sm_lift_stm f).
 Proof.
-    apply (eq_stm_dep (trivial_sys sys1) (trivial_sys sys3)
+    apply (eq_stm_dep (discreet_sys sys1) (discreet_sys sys3)
         (compose (sys_state_morph sys2 sys3 g) (sys_state_morph sys1 sys2 f))).
     apply functional_extensionality_dep.
     intro st1.
@@ -833,7 +833,7 @@ Theorem sys_iso_to_bisim
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
     {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2} :
-    systems_isomorphic sys1 sys2 -> systems_bisimilar (trivial_sys sys1) (trivial_sys sys2).
+    systems_isomorphic sys1 sys2 -> systems_bisimilar (discreet_sys sys1) (discreet_sys sys2).
 Proof.
     intro sys_iso.
     destruct sys_iso as [f [g [is_iso_1 is_iso_2]]].
@@ -871,11 +871,11 @@ Proof.
 Defined.
 
 Definition lift_ctm_to_stm (f : ContractTraceMorphism C1 C2) :
-    SystemTraceMorphism (trivial_sys (singleton_place_graph C1)) (trivial_sys (singleton_place_graph C2)).
+    SystemTraceMorphism (discreet_sys (singleton_place_graph C1)) (discreet_sys (singleton_place_graph C2)).
 Proof.
     destruct f as [ct_st_morph gen_fixp cstep_morph].
     apply (build_st_morph 
-        (trivial_sys (singleton_place_graph C1)) (trivial_sys (singleton_place_graph C2)) ct_st_morph);
+        (discreet_sys (singleton_place_graph C1)) (discreet_sys (singleton_place_graph C2)) ct_st_morph);
     unfold singleton_place_graph, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
     -   apply gen_fixp.
     -   intros * step.
