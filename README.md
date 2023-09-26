@@ -1,7 +1,7 @@
 # FinCert: Meta Properties of Financial Smart Contracts
 
 This repository contains theoretical tools for reasoning about *meta properties* of financial smart contracts. A contract's *meta properties* are those which are intended by, but out of scope of, the contract's specification.
-These can include anything from its economic or upgradeability properties, or how it behaves when considered within a system of contracts.
+These can include anything from its economic or upgradeability properties, to how it behaves when considered within a system of contracts.
 
 ## Meta Properties
 
@@ -24,20 +24,21 @@ For each of these classes of meta properties, we introduce theoretical tools to 
 To reason about these classes of meta properties, we introduce three (classes of) theoretical tools:
 1. A **contract metaspecification**, to formally reason about a contract specification, including #1 above.
 1. **Contract morphisms**, which formally encode structural relationships between smart contracts, useful to reason about #2 above.
-1. And contract **equivalences** and **bisimulations**, which we use to reason about a system of contracts in terms of a monolithic counterpart for #3 above.
+1. And **equivalences**, **bisimulations**, and **bigraphs** which we use to reason about a system of contracts in terms of a monolithic counterpart for #3 above.
 
 ## Accompanying Text
 
-This repository is designed to be self-contained, but can also be used as a companion to the text of my thesis, [which can be found here](thesis.pdf).
+This repository is designed to be self-contained, but can also be used as a companion to the text of my thesis, [which can be found here](sorensen-phd-thesis.pdf).
 
 ## Repository Organization
 
-* the [theories](theories/) folder houses the [theoretical tools mentioned above](#theoretical-tools-to-reason-about-meta-properties), and has three main files:
+* The [theories](theories/) folder houses the [theoretical tools mentioned above](#theoretical-tools-to-reason-about-meta-properties), and has three main files:
     * [ContractMorphisms](theories/ContractMorphisms.v), which develops a theoretical tool called a *contract morphism*
     * [Bisimulation](theories/Bisimulation.v), which develops various notions of equivalences between contracts
     * [ContractSystems](theories/ContractSystems.v), which gives a data structure for iteratively building systems of contracts out of component pieces
-* the [specifications](specifications/) folder houses formalized specifications, and metaspecifications, which for now includes just structured pools
-* the [examples](examples/) folder houses examples of using the techniques mentioned above in verifying smart contracts
+    * It also has a file called [DeFi](theories/DeFi.v), which contains a roadmap for encoding a theory of DeFi and AMMs in ConCert.
+* The [specifications](specifications/) folder houses formalized specifications, and metaspecifications, which for now includes just structured pools
+* The [examples](examples/) folder houses examples of using the techniques mentioned above in verifying smart contracts
 
 
 ## Installing and Compiling
