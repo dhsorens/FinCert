@@ -35,8 +35,10 @@ Open Scope string.
     Under the condition of a link graph specification, these contracts are 
 *)
 
-Section Interface.
+Section InterfaceBackend.
 Context { Base : ChainBase }.
+Context {interface_caddr backend_caddr : Address}.
+
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
@@ -48,18 +50,21 @@ Record state := build_state { counter : nat }.
 Definition error := nat.
 
 (* for the interface *)
-Definition setup_i := Address.
+Definition setup_i := unit.
 Inductive entrypoint_i := 
 | incr_i (n : nat).
-Record state_i := build_state_i  { backend_address : Address }.
+(* Record state_i := build_state_i  { backend_address : Address }. *)
+Definition state_i := unit.
 Definition error_i := nat.
 
 (* for the backend *)
-Definition setup_b := Address.
+Definition setup_b := unit.
 Inductive entrypoint_b := 
 | incr_b (n : nat).
+(* Record state_b := 
+    build_state_b { interface_address : Address ; counter_backend : nat }. *)
 Record state_b := 
-    build_state_b { interface_address : Address ; counter_backend : nat }.
+    build_state_b { counter_backend : nat }.
 Definition error_b := nat.
 
 Section Serialization.
@@ -71,8 +76,8 @@ Section Serialization.
         Derive Serializable entrypoint_b_rect<incr_b>.
     Global Instance state_serializable : Serializable state := 
         Derive Serializable state_rect<build_state>.
-    Global Instance state_i_serializable : Serializable state_i := 
-        Derive Serializable state_i_rect<build_state_i>.
+    (* Global Instance state_i_serializable : Serializable state_i := 
+        Derive Serializable state_i_rect<build_state_i>.*)
     Global Instance state_b_serializable : Serializable state_b := 
         Derive Serializable state_b_rect<build_state_b>.
 End Serialization.
@@ -112,8 +117,8 @@ Section Interface.
 Definition init_i
     (_ : Chain)
     (_ : ContractCallContext)
-    (caddr : setup_i) : result state_i error_i := 
-    Ok (build_state_i caddr).
+    (_ : setup_i) : result state_i error_i := 
+    Ok tt.
 
 (* receive *)
 Definition receive_i
@@ -123,7 +128,7 @@ Definition receive_i
     (msg : option entrypoint_i) : result (state_i * list ActionBody) error_i :=
     match msg with
     | Some (incr_i n) => 
-        let act_incr := act_call (backend_address st) 0 (serialize (incr_b n)) in
+        let act_incr := act_call backend_caddr 0 (serialize (incr_b n)) in
         Ok (st, [ act_incr ])
     | None => Err 0%nat
     end.
@@ -138,8 +143,8 @@ Section Backend.
 Definition init_b
     (_ : Chain)
     (_ : ContractCallContext)
-    (caddr : setup_b) : result state_b error_b := 
-    Ok (build_state_b caddr 0%nat).
+    (_ : setup_b) : result state_b error_b := 
+    Ok (build_state_b 0).
 
 (* receive *)
 Definition receive_b
@@ -147,10 +152,10 @@ Definition receive_b
     (ctx : ContractCallContext)
     (st : state_b) 
     (msg : option entrypoint_b) : result (state_b * list ActionBody) error_b :=
-    if address_eqb (ctx_from ctx) (interface_address st) then 
+    if address_eqb (ctx_from ctx) interface_caddr then 
         match msg with 
         | Some (incr_b n) => 
-            Ok (build_state_b (interface_address st) (counter_backend st + n), [])
+            Ok (build_state_b (counter_backend st + n), [])
         | None => Err 0%nat
         end
     else Err 0%nat.
@@ -167,7 +172,6 @@ Definition modu_place := nest contract_interface contract_backend.
 
 
 Section Bisimulation.
-Context {interface_caddr backend_caddr : Address}.
 
 Definition permissioned_ctx ctx := {|
     ctx_origin := interface_caddr ;
@@ -225,66 +229,16 @@ End LinkGraph.
 
 (* the morphisms *)
 (* mono -> modu *)
-Definition st_mono_modu st := (build_state_i backend_caddr, build_state_b interface_caddr (counter st)).
-
-Lemma gen_mono_modu : forall init_sys_state,
-    is_genesis_sys_state mono_sys init_sys_state -> 
-    is_genesis_sys_state modu_sys (st_mono_modu init_sys_state).
-Proof.
-    intros st gen_mono.
-    unfold is_genesis_sys_state in *.
-    destruct gen_mono as [c [ctx [s init_ok]]].
-    exists c, ctx, (backend_caddr, interface_caddr).
-    unfold sys_init, modu_sys, mono_sys in *.
-    cbn in *.
-    unfold init in init_ok.
-    now inversion init_ok.
-Qed.
-
-Definition step_mono_modu st1 st2 (step : SystemStep mono_sys st1 st2) :
-    SystemStep modu_sys (st_mono_modu st1) (st_mono_modu st2).
-Proof.
-    destruct step, sys_step_msg.
-    2:{ unfold mono_place in *. 
-        cbn in *.
-        inversion sys_recv_ok_step. }
-    destruct e.
-    apply (step_incr 
-        ({| backend_address := backend_caddr |}, 
-            {| interface_address := interface_caddr; counter_backend := counter st1 |})
-        ({| backend_address := backend_caddr |}, 
-            {| interface_address := interface_caddr; counter_backend := counter st2 |})
-        sys_step_chain
-        sys_step_ctx
-        n).
-    +   auto.
-    +   unfold modu_place.
-        cbn.
-        unfold receive_b, permissioned_ctx.
-        cbn.
-        rewrite (address_eq_refl interface_caddr).
-        do 4 f_equal.
-        unfold mono_place in sys_recv_ok_step.
-        cbn in sys_recv_ok_step.
-        now inversion sys_recv_ok_step.
-Defined.
-
-Definition stm_mono_modu : SystemTraceMorphism mono_sys modu_sys := {|
-    st_state_morph := st_mono_modu ;
-    sys_genesis_fixpoint := gen_mono_modu ;
-    sys_step_morph := step_mono_modu ;
-|}.
-
-Definition stm_mono_modu' : SystemTraceMorphism mono_sys modu_sys.
+Definition stm_mono_modu : SystemTraceMorphism mono_sys modu_sys.
 Proof.
     apply (build_st_morph mono_sys modu_sys
         (* the function between state types *)
         (fun st =>
-            (build_state_i backend_caddr, build_state_b interface_caddr (counter st)))).
+            (tt, build_state_b (counter st)))).
     -   intros st gen_mono.
         unfold is_genesis_sys_state in *.
         destruct gen_mono as [c [ctx [s init_ok]]].
-        exists c, ctx, (backend_caddr, interface_caddr).
+        exists c, ctx, (tt, tt).
         unfold sys_init, modu_sys, mono_sys in *.
         cbn in *.
         unfold init in init_ok.
@@ -296,10 +250,8 @@ Proof.
             inversion sys_recv_ok_step. }
         destruct e.
         apply (step_incr 
-            ({| backend_address := backend_caddr |}, 
-                {| interface_address := interface_caddr; counter_backend := counter st1 |})
-            ({| backend_address := backend_caddr |}, 
-                {| interface_address := interface_caddr; counter_backend := counter st2 |})
+            (tt, {| counter_backend := counter st1 |})
+            (tt, {| counter_backend := counter st2 |})
             sys_step_chain
             sys_step_ctx
             n).
@@ -343,12 +295,103 @@ Proof.
         cbn in *.
         unfold receive_b in *.
         cbn in *.
-        destruct (interface_caddr =? interface_address st1_b)%address; 
+        destruct (interface_caddr =? interface_caddr)%address; 
         now inversion backend_ok.
 Defined.
 
-Theorem mono_modu_bisim :
-    systems_bisimilar mono_sys modu_sys.
+Definition aux_fun : forall (init_sys_state : state_i * state_b) (gen_sys : is_genesis_sys_state modu_sys init_sys_state), is_genesis_sys_state modu_sys
+(Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu)
+   (st_state_morph modu_sys mono_sys stm_modu_mono) init_sys_state).
+Proof.
+    assert
+            (id = (Basics.compose 
+                (st_state_morph mono_sys modu_sys stm_mono_modu)
+                (st_state_morph modu_sys mono_sys stm_modu_mono)))
+        as H_id_eq.
+        {   auto.
+            unfold stm_mono_modu, stm_modu_mono.
+            cbn.
+            apply functional_extensionality.
+            simpl.
+            intros [sti stb].
+            now destruct sti, stb. }
+        assert (forall init_sys_state,
+            is_genesis_sys_state modu_sys init_sys_state = 
+            is_genesis_sys_state modu_sys (Basics.compose 
+                        (st_state_morph mono_sys modu_sys stm_mono_modu) 
+                        (st_state_morph modu_sys mono_sys stm_modu_mono) init_sys_state))
+        as H_gen_eq.
+        {   intros [sti stb].
+            now rewrite <- H_id_eq. }
+    intros * gen_sys.
+    rewrite <- (H_gen_eq init_sys_state).
+    exact gen_sys.
+Defined.
+
+Definition aux_fun2 : forall (sys_state1 sys_state2 : state_i * state_b) (step : SystemStep modu_sys sys_state1 sys_state2), SystemStep modu_sys (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu)
+(st_state_morph modu_sys mono_sys stm_modu_mono) sys_state1) (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu)
+(st_state_morph modu_sys mono_sys stm_modu_mono) sys_state2).
+Proof.
+    assert
+            (id = (Basics.compose 
+                (st_state_morph mono_sys modu_sys stm_mono_modu)
+                (st_state_morph modu_sys mono_sys stm_modu_mono)))
+        as H_id_eq.
+        {   auto.
+            unfold stm_mono_modu, stm_modu_mono.
+            cbn.
+            apply functional_extensionality.
+            simpl.
+            intros [sti stb].
+        now destruct sti, stb. }
+    assert (forall init_sys_state,
+        is_genesis_sys_state modu_sys init_sys_state = 
+        is_genesis_sys_state modu_sys (Basics.compose 
+                    (st_state_morph mono_sys modu_sys stm_mono_modu) 
+                    (st_state_morph modu_sys mono_sys stm_modu_mono) init_sys_state))
+    as H_gen_eq.
+    {   intros [sti stb].
+        now rewrite <- H_id_eq. }
+    intros * step.
+    rewrite <- H_id_eq.
+    exact step.
+Defined.
+
+(* transport via eq_rect_r *)
+(* Check eq_rect_r. *)
+Definition transport_id_stm
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
+    {sys : ContractSystem Setup Msg State Error}
+    {st_morph : State -> State}
+    (H_id_eq : st_morph = id) : 
+    forall sys_state1 sys_state2,
+        SystemStep sys sys_state1 sys_state2 ->
+        SystemStep sys (st_morph sys_state1) (st_morph sys_state2) :=
+    fun st1 st2 step =>
+        eq_rect_r
+            (fun st_morph : State -> State => SystemStep sys (st_morph st1) (st_morph st2))
+            step
+            H_id_eq.
+
+(* transport over  *)
+Lemma dep_transport
+    `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
+    (sys : ContractSystem Setup Msg State Error)
+    (st_mph : State -> State)
+    sys_gen_fix
+    (sys_step_m : forall sys_state1 sys_state2,
+        SystemStep sys sys_state1 sys_state2 ->
+        SystemStep sys (st_mph sys_state1) (st_mph sys_state2))
+    (H_id_eq : st_mph = id) :
+    (* transport  *)
+    sys_step_m = transport_id_stm H_id_eq ->
+    {| st_state_morph := st_mph ;
+       sys_genesis_fixpoint := sys_gen_fix ;
+       sys_step_morph := sys_step_m ; |}
+    = id_stm sys.
+Admitted.
+
+Theorem mono_modu_bisim : systems_bisimilar mono_sys modu_sys.
 Proof.
     unfold systems_bisimilar.
     exists stm_mono_modu, stm_modu_mono.
@@ -356,89 +399,96 @@ Proof.
     unfold compose_stm, id_stm.
     split.
     (* mono -> mono = id *)
-    -   assert (sys_step_compose stm_modu_mono stm_mono_modu = id_sys_step_morph mono_sys) 
-        as H_steps_eq.
-        {   apply functional_extensionality_dep.
-            intro st1.
-            apply functional_extensionality_dep.
-            intro st2.
-            apply functional_extensionality_dep.
-            intro step.
-            unfold id_sys_step_morph, sys_step_compose.
-            destruct step.
-            destruct sys_step_msg;
-            cbn.
-            +   destruct e.
-                pose sys_recv_ok_step as sys_recv_ok2.
-                cbn in sys_recv_ok2.
-                inversion sys_recv_ok2.
-                subst.
-                apply f_equal.
-                apply proof_irrelevance.
-            +   unfold sys_receive, mono_place in sys_recv_ok_step.
-                cbn in sys_recv_ok_step.
-                inversion sys_recv_ok_step. }
-        rewrite (eq_stm_dep mono_sys mono_sys 
-            (Basics.compose (st_state_morph modu_sys mono_sys stm_modu_mono) (st_state_morph mono_sys modu_sys stm_mono_modu))
+    -   apply (eq_stm_dep mono_sys mono_sys 
+            (Basics.compose 
+                (st_state_morph modu_sys mono_sys stm_modu_mono)
+                (st_state_morph mono_sys modu_sys stm_mono_modu))
             (sys_genesis_compose stm_modu_mono stm_mono_modu)
-            (id_sys_genesis_fixpoint mono_sys)
-            (sys_step_compose stm_modu_mono stm_mono_modu)
-            (id_sys_step_morph mono_sys)
-            H_steps_eq).
-        now apply f_equal.
+            (id_sys_genesis_fixpoint mono_sys)).
+        apply functional_extensionality_dep.
+        intro st1.
+        apply functional_extensionality_dep.
+        intro st2.
+        apply functional_extensionality_dep.
+        intro step.
+        unfold id_sys_step_morph, sys_step_compose.
+        destruct step.
+        destruct sys_step_msg;
+        cbn.
+        +   destruct e.
+            pose sys_recv_ok_step as sys_recv_ok2.
+            cbn in sys_recv_ok2.
+            inversion sys_recv_ok2.
+            subst.
+            apply f_equal.
+            apply proof_irrelevance.
+        +   unfold sys_receive, mono_place in sys_recv_ok_step.
+            cbn in sys_recv_ok_step.
+            inversion sys_recv_ok_step.
     (* modu -> modu = id *)
-    -    assert (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu) 
-                    (st_state_morph modu_sys mono_sys stm_modu_mono) = id)
-        as H_compose_eq.
-        {   apply functional_extensionality.
-            intro st.
-            destruct st as [st_i st_b].
+    -   assert
+            (Basics.compose 
+                (st_state_morph mono_sys modu_sys stm_mono_modu)
+                (st_state_morph modu_sys mono_sys stm_modu_mono) = id)
+        as H_id_eq.
+        {   auto.
+            unfold stm_mono_modu, stm_modu_mono.
             cbn.
-            f_equal.
-            -   pose proof (H_sti st_i).
-                destruct st_i.
-                cbn in *.
-                now rewrite H.
-            -   pose proof (H_stb st_b).
-                destruct st_b.
-                cbn in *.
-                now rewrite H. }
-
-        apply (eq_stm_dep modu_sys modu_sys).
-            (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu) (st_state_morph modu_sys mono_sys stm_modu_mono))).
-            (sys_genesis_compose stm_mono_modu stm_modu_mono)).
-        replace ((Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu)
-        (st_state_morph modu_sys mono_sys stm_modu_mono) init_sys_state))
-        with (id init_sys_state).
-
-
-        assert (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu) (st_state_morph modu_sys mono_sys stm_modu_mono) = id)
-        as H_compose_eq.
-        {   apply functional_extensionality.
-            intro st.
-            destruct st as [st_i st_b].
-            cbn.
-            f_equal.
-            -   pose proof (H_sti st_i).
-                destruct st_i.
-                cbn in *.
-                now rewrite H.
-            -   pose proof (H_stb st_b).
-                destruct st_b.
-                cbn in *.
-                now rewrite H. }
-        
-        unfold sys_step_compose. cbn. subst.
-        
-        pose proof (eq_stm_dep modu_sys modu_sys 
-            (Basics.compose (st_state_morph mono_sys modu_sys stm_mono_modu) (st_state_morph modu_sys mono_sys stm_modu_mono))
+            apply functional_extensionality.
+            simpl.
+            intros [sti stb].
+            now destruct sti, stb. }
+        apply (dep_transport modu_sys
+            (Basics.compose
+                (st_state_morph _ _ stm_mono_modu)
+                (st_state_morph _ _ stm_modu_mono))
             (sys_genesis_compose stm_mono_modu stm_modu_mono)
-            (id_sys_genesis_fixpoint modu_sys)
-            ).
+            (sys_step_compose stm_mono_modu stm_modu_mono)
+            H_id_eq).
+        unfold transport_id_stm.
+        cbn.
+        apply functional_extensionality_dep.
+        intros st1.
+        apply functional_extensionality_dep.
+        intros st2.
+        Check eq_rect_r.
+        apply functional_extensionality_dep.
+        intro link.
+        (* rewrite sys_step_compose *)
+        destruct link.
+        cbn.
+        
+        (* state a lemma for this *)
 
+        replace (sys_step_compose stm_mono_modu stm_modu_mono st1 st2 link)
+        with (sys_step_morph mono_sys modu_sys stm_mono_modu _ _
+            (sys_step_morph modu_sys mono_sys stm_modu_mono st1 st2 link)).
+        2:{ admit. }
+
+        
+
+        Check (eq_rect_r
+        (fun st_morph : state_i * state_b -> state_i * state_b =>
+         modu_link (st_morph st1) (st_morph st2)) link H_id_eq).
+        with link.
+
+        unfold sys_step_compose.
+        
+        simpl.
+        destruct step.
+        
+        (* *)
+        
+        unfold sys_step_compose.
+        unfold eq_rect_r, eq_rect.
+        
+        
+
+        admit.
+Admitted.
 
 
 End Bisimulation.
 
 
-End Interface.
+End InterfaceBackend.
