@@ -593,24 +593,24 @@ End STMorphismCompositionResults.
 (** System morphisms lift to system trace morphisms with the trivial link graph *)
 Section LiftingTheorem.
 
-Section DiscreetLinkSys.
+Section DiscreteLinkSys.
 Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
 
-Definition discreet_link (sys : ContractPlaceGraph Setup Msg State Error) st1 st2 := 
+Definition discrete_link (sys : ContractPlaceGraph Setup Msg State Error) st1 st2 := 
     SingleSystemStep sys st1 st2.
 
-Definition discreet_link_semantics (sys : ContractPlaceGraph Setup Msg State Error) 
-    st1 st2 (step : discreet_link sys st1 st2) :
+Definition discrete_link_semantics (sys : ContractPlaceGraph Setup Msg State Error) 
+    st1 st2 (step : discrete_link sys st1 st2) :
     ChainedSingleSteps sys st1 st2 :=
     (snoc clnil step).
 
-Definition discreet_sys (sys : ContractPlaceGraph Setup Msg State Error) := {|
+Definition discrete_sys (sys : ContractPlaceGraph Setup Msg State Error) := {|
     sys_place := sys ;
-    sys_link := discreet_link sys ;
-    sys_link_semantics := discreet_link_semantics sys ; 
+    sys_link := discrete_link sys ;
+    sys_link_semantics := discrete_link_semantics sys ; 
 |}.
 
-End DiscreetLinkSys.
+End DiscreteLinkSys.
 
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
@@ -619,8 +619,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 
 Definition lift_sys_genesis (f : SystemMorphism sys1 sys2) :
     forall init_sys_state,
-        is_genesis_sys_state (discreet_sys sys1) init_sys_state ->
-        is_genesis_sys_state (discreet_sys sys2) (sys_state_morph sys1 sys2 f init_sys_state).
+        is_genesis_sys_state (discrete_sys sys1) init_sys_state ->
+        is_genesis_sys_state (discrete_sys sys2) (sys_state_morph sys1 sys2 f init_sys_state).
 Proof.
     destruct f as [setup_morph msg_morph state_morph error_morph i_coh r_coh].
     cbn.
@@ -636,8 +636,8 @@ Defined.
 
 Definition lift_sys_step_morph (f : SystemMorphism sys1 sys2) :
     forall sys_state1 sys_state2,
-        SystemStep (discreet_sys sys1) sys_state1 sys_state2 ->
-        SystemStep (discreet_sys sys2)
+        SystemStep (discrete_sys sys1) sys_state1 sys_state2 ->
+        SystemStep (discrete_sys sys2)
             (sys_state_morph sys1 sys2 f sys_state1)
             (sys_state_morph sys1 sys2 f sys_state2).
 Proof.
@@ -656,7 +656,7 @@ Defined.
 
 (** Lifting Theorem *)
 Definition sm_lift_stm (f : SystemMorphism sys1 sys2) : 
-    SystemTraceMorphism (discreet_sys sys1) (discreet_sys sys2) :=
+    SystemTraceMorphism (discrete_sys sys1) (discrete_sys sys2) :=
     build_st_morph _ _ (sys_state_morph _ _ f) (lift_sys_genesis f) (lift_sys_step_morph f).
 
 End LiftingTheorem.
@@ -672,10 +672,10 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {sys3 : ContractPlaceGraph Setup3 Msg3 State3 Error3}.
 
 (* id lifts to id *)
-Theorem sm_lift_stm_id : 
-    sm_lift_stm (id_sm sys1) = id_stm (discreet_sys sys1).
+Lemma sm_lift_stm_id : 
+    sm_lift_stm (id_sm sys1) = id_stm (discrete_sys sys1).
 Proof.
-    apply (eq_stm_dep (discreet_sys sys1) (discreet_sys sys1) (@id State1)).
+    apply (eq_stm_dep (discrete_sys sys1) (discrete_sys sys1) (@id State1)).
     apply functional_extensionality_dep.
     intro st1.
     apply functional_extensionality_dep.
@@ -683,7 +683,7 @@ Proof.
     apply functional_extensionality_dep.
     intro sys_step.
     destruct sys_step.
-    unfold lift_sys_step_morph, id_sm, discreet_sys, option_map, id_sys_step_morph.
+    unfold lift_sys_step_morph, id_sm, discrete_sys, option_map, id_sys_step_morph.
     cbn.
     do 2 f_equal; auto.
     destruct sys_step_msg;
@@ -692,12 +692,12 @@ Proof.
 Qed.
 
 (* compositions lift to compositions *)
-Theorem sm_lift_stm_compose 
+Lemma sm_lift_stm_compose 
     (g : SystemMorphism sys2 sys3) (f : SystemMorphism sys1 sys2) :
     sm_lift_stm (compose_sm g f) =
     compose_stm (sm_lift_stm g) (sm_lift_stm f).
 Proof.
-    apply (eq_stm_dep (discreet_sys sys1) (discreet_sys sys3)
+    apply (eq_stm_dep (discrete_sys sys1) (discrete_sys sys3)
         (compose (sys_state_morph sys2 sys3 g) (sys_state_morph sys1 sys2 f))).
     apply functional_extensionality_dep.
     intro st1.
@@ -828,12 +828,12 @@ Proof.
 Qed.
 
 (* an isomorphism of systems lifts to a bisimulation *)
-Theorem sys_iso_to_bisim
+Corollary sys_iso_to_bisim
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-    {sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1}
-    {sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2} :
-    systems_isomorphic sys1 sys2 -> systems_bisimilar (discreet_sys sys1) (discreet_sys sys2).
+    (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
+    (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :
+    systems_isomorphic sys1 sys2 -> systems_bisimilar (discrete_sys sys1) (discrete_sys sys2).
 Proof.
     intro sys_iso.
     destruct sys_iso as [f [g [is_iso_1 is_iso_2]]].
@@ -871,11 +871,13 @@ Proof.
 Defined.
 
 Definition lift_ctm_to_stm (f : ContractTraceMorphism C1 C2) :
-    SystemTraceMorphism (discreet_sys (singleton_place_graph C1)) (discreet_sys (singleton_place_graph C2)).
+    SystemTraceMorphism
+        (discrete_sys (singleton_place_graph C1))
+        (discrete_sys (singleton_place_graph C2)).
 Proof.
     destruct f as [ct_st_morph gen_fixp cstep_morph].
     apply (build_st_morph 
-        (discreet_sys (singleton_place_graph C1)) (discreet_sys (singleton_place_graph C2)) ct_st_morph);
+        (discrete_sys (singleton_place_graph C1)) (discrete_sys (singleton_place_graph C2)) ct_st_morph);
     unfold singleton_place_graph, singleton_ntree, sys_init, sys_receive, ntree_fold_left in *.
     -   apply gen_fixp.
     -   intros * step.
@@ -935,7 +937,7 @@ Proof.
 Qed.
 
 (* isomorphic contracts => isomorphic singleton systems *)
-Lemma c_iso_csys_iso
+Theorem c_iso_csys_iso
     `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
     `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
     {C1 : Contract Setup1 Msg1 State1 Error1}
