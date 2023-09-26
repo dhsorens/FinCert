@@ -356,6 +356,7 @@ Section SystemMorphismDefinition.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
+(** A morphism of system place graphs *)
 Record SystemMorphism
     (sys1 : ContractPlaceGraph Setup1 Msg1 State1 Error1)
     (sys2 : ContractPlaceGraph Setup2 Msg2 State2 Error2) :=
@@ -446,14 +447,14 @@ Qed.
 
 (** The identity morphism *)
 Definition id_sm (sys : ContractPlaceGraph Setup Msg State Error) : SystemMorphism sys sys := {|
-        (* components *)
-        sys_setup_morph := id ;
-        sys_msg_morph   := id ; 
-        sys_state_morph := id ; 
-        sys_error_morph := id ; 
-        (* coherence conditions *)
-        sys_init_coherence := sys_init_coherence_id sys ; 
-        sys_recv_coherence := sys_recv_coherence_id sys ;
+    (* components *)
+    sys_setup_morph := id ;
+    sys_msg_morph   := id ; 
+    sys_state_morph := id ; 
+    sys_error_morph := id ; 
+    (* coherence conditions *)
+    sys_init_coherence := sys_init_coherence_id sys ; 
+    sys_recv_coherence := sys_recv_coherence_id sys ;
     |}.
 
 End IdentitySystemMorphism.
