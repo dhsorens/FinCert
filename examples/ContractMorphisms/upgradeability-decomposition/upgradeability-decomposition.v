@@ -77,12 +77,35 @@ Definition result_f     : storage_b -> Type :=
     fun v => ResultMonad.result ((storage_f v) * list ActionBody) (error_f v).
 
 Section Serialization.
-    Global Instance storage_serializable : Serializable storage := todo "".
-    Global Instance entrypoint_serializable : Serializable entrypoint := todo "".
-    Global Instance storage_s_serializable : Serializable storage_b := todo "".
-    Global Instance entrypoint_s_serializable : Serializable entrypoint_skel := todo "".
-    Global Instance storage_f_serializable : forall v, Serializable (storage_f v) := todo "".
-    Global Instance entrypoint_f_serializable : forall v, Serializable (entrypoint_f v) := todo "".
+    Section SerializeFunctionType.
+        Context `{Serializable A} `{Serializable B}.
+
+        (* for simplicity, we assume that function types are serializable *)
+        Definition serialize_nn (f : A -> B) : SerializedValue. Admitted.
+        Definition deserialize_nn (val : SerializedValue) : option (A -> B). Admitted.
+        Lemma deserialize_serialize_nn (f : A -> B) :
+            deserialize_nn (serialize_nn f) = Some f.
+        Admitted.
+
+        Global Instance nn_serializable : Serializable (A -> B) := 
+        {| serialize := serialize_nn ;
+            deserialize := deserialize_nn ;
+            deserialize_serialize := deserialize_serialize_nn ; |}.
+    End SerializeFunctionType.
+
+    (* assuming function types are serializable, ... *)
+    Global Instance storage_serializable : Serializable storage := 
+        Derive Serializable storage_rect<Build_storage>.
+    Global Instance entrypoint_serializable : Serializable entrypoint :=
+        Derive Serializable entrypoint_rect<next,upgrade_fun>.
+    Global Instance storage_b_serializable : Serializable storage_b :=
+        Derive Serializable storage_b_rect<Build_storage_b>.
+    Global Instance entrypoint_s_serializable : Serializable entrypoint_b' :=
+        Derive Serializable entrypoint_b'_rect<upgrade_fun_b>.
+    Global Instance storage_f_serializable v : Serializable (storage_f v) :=
+        Derive Serializable storage_version_rect<Build_storage_version>.
+    Global Instance entrypoint_f_serializable v : Serializable (entrypoint_f v) :=
+        Derive Serializable entrypoint_version_rect<next_f>.
 End Serialization.
 
 (** Contract, init, and receive definitions *)
