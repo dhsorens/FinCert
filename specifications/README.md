@@ -11,4 +11,4 @@ Metaspecifications can draw on a theory of AMMs and DeFi to formulate correct ec
 
 We expect future contract specifications and metaspecifications added here to follow that same pattern, in order to have a well-specified and formally verified library of token and other contract standards.
 
-NB there is an FA2 specification file present in this repository, but it only contains the relevant types to an FA2 contract which the structured pool specification uses.
+**NB** there is an FA2 specification file present in this repository, but it only contains the relevant types to an FA2 contract which the structured pool specification uses.
