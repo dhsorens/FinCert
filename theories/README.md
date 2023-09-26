@@ -1,12 +1,10 @@
 # Theories 
 
-This subdirectory contains the theory of smart contracts. We study the 
-computational structure of smart contracts in order to support reasoning
-about its meta properties. These include 
-upgradeability properties, as well as properties of multiple contracts taken
-as a whole.
+This subdirectory contains the theoretical tools we use to target meta properties of smart contracts.
+The tools housed here include contract morphisms, 
+bisimulations, and bigraphs.
 
-The first, fundamental notion we introduce is that of a morphism of contracts.
+We give a (very) short summary here, but for full details, please see the thesis text [which can be found here](../sorensen-phd-thesis.pdf).
 
 ## Contract Morphisms
 Contract morphisms are functions between smart contracts that relate their 
@@ -38,13 +36,13 @@ Of course, a bisimulation is the most influential notion of equivalence between 
 
 ## Bisimulation
 
-A bisimulation is an isomorhpism of system traces. 
+A bisimulation is an isomorhpism of contract (or system) traces. 
 To establish a bisimulation of contracts `C1` and `C2`, we need a function `st_morph` between their respective storage types and a function between contract steps (how a contract moves forward) such that:
 1. `st_morph` sends initial states of `C1` to initial states of `C2`, and 
 1. if `C1` can step from states `st1` to `st2`, then `C2` can step from `(st_morph st1)` to `(st_morph st2)`
 
 Given any execution trace of `C1`, this gives us a corresponding trace of `C2`. If `st_morph` has an inverse that satisfies the properties above, then this gives us a *bisimulation* between contracts `C1` and `C2`.
-This means that execution traces are in one-to-one correspondence under these *morphisms of contract traces*.
+This means that execution traces are in one-to-one correspondence under an *isomorphism of contract traces*.
 
 An isomorphism of contracts produces a bisimulation of their traces.
 
