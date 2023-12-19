@@ -13,3 +13,11 @@ specifications/StructuredPoolsSpec/StructuredPoolsSpec.v
 
 -Q specifications/FA2Spec FinCert.Specifications.FA2Spec
 specifications/FA2Spec/FA2Spec.v
+
+-Q specifications/Token FinCert.Specifications.Token
+specifications/Token/Token.v
+specifications/Token/TokenGeneric.v
+
+-Q specifications/AMM FinCert.Specifications.AMM
+specifications/AMM/AMM.v
+specifications/AMM/AMMGeneric.v

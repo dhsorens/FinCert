@@ -166,7 +166,6 @@ Context {Base : ChainBase}
  * ============================================================================= *)
 
     { Setup Msg State Error : Type }
-    { other_entrypoint : Type }
     `{Serializable Setup}  `{Serializable Msg}  `{Serializable State} `{Serializable Error}.
 
 (** Specification of the Msg type:
@@ -193,13 +192,13 @@ Record trade_data := {
 }.
 
 (* The Msg typeclass *)
-Class Msg_Spec (T : Type) := 
+Class Msg_Spec (T other : Type) := 
   build_msg_spec {
     pool : pool_data -> T ;
     unpool : unpool_data -> T ;
     trade : trade_data -> T ;
     (* any other potential entrypoints *)
-    other : other_entrypoint -> option T ;
+    other : other -> option T ;
 }.
 
 (** Specification of the State type:
@@ -239,7 +238,9 @@ Class Error_Spec (T : Type) :=
 }.
 
 (* we assume that our contract types satisfy the type specifications *)
-Context `{Msg_Spec Msg}  `{Setup_Spec Setup}  `{State_Spec State} `{Error_Spec Error}.
+Context { other_entrypoint : Type }.
+Context `{Msg_Spec Msg other_entrypoint}  `{Setup_Spec Setup}
+        `{State_Spec State} `{Error_Spec Error}.
 
 (* First, we assume that all successful calls require a message *)
 Definition none_fails (contract : Contract Setup Msg State Error) : Prop :=
