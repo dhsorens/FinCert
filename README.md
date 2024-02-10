@@ -57,8 +57,8 @@ make
 
 This should compile on MacOS with (at least) these versions:
 ```
-The Coq Proof Assistant, version 8.16.0
-compiled with OCaml 4.14.0
+The Coq Proof Assistant, version 8.17.0
+compiled with OCaml 4.10.2
 ```
 
 For VSCode users, `VSCoq` seems to work well as a plugin with which to step through proofs.
