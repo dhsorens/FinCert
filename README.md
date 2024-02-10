@@ -48,7 +48,7 @@ Clone the repository with the `--recursive` tag so that you include the submodul
 git clone git@github.com:differentialderek/FinCert.git --recursive
 ```
 
-Go into the `FinCert-ConCert-fork/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](https://github.com/differentialderek/FinCert-ConCert-fork/tree/contract_morphisms). Note that installation may take some time, and make sure you're on the `contract_morphisms` branch.
+Go into the `ConCert/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](https://github.com/differentialderek/ConCert/tree/contract_morphisms). Note that installation may take some time, and make sure you're on the `contract_morphisms` branch.
 
 Now go back to the root `FinCert/` directory, and make the Coq project.
 ```
