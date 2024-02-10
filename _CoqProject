@@ -1,6 +1,6 @@
--Q FinCert-ConCert-fork/execution/theories ConCert.Execution
--Q FinCert-ConCert-fork/execution/test ConCert.Execution.Test
--Q FinCert-ConCert-fork/utils/theories ConCert.Utils
+-Q ConCert/execution/theories ConCert.Execution
+-Q ConCert/execution/test ConCert.Execution.Test
+-Q ConCert/utils/theories ConCert.Utils
 
 -R theories FinCert.Meta
 theories/ContractMorphisms.v
