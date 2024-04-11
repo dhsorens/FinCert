@@ -1,30 +1,43 @@
-# FinCert: Meta Properties of Financial Smart Contracts
+# FinCert: Formal Tools for Specifying Financial Smart Contracts
 
-This repository contains theoretical tools for reasoning about *meta properties* of financial smart contracts. A contract's *meta properties* are those which are intended by, but out of scope of, the contract's specification.
-These can include anything from its economic or upgradeability properties, to how it behaves when considered within a system of contracts.
+Financial smart contracts are *risk- and property-dense* and can be difficult to specify correctly. Indeed, practitioners of formal verification often say that writing a good specification is the hardest part of formal verification, as efforts of formal verification can be rendered null if the specification is incorrect.
 
-## Meta Properties
+This is an experimental repository whose aim is to develop formal tools with which we can better specify and verify financial smart contracts.
 
-The meta properties of interest for us are:
-1. A contract's **economic properties**
-    - How does a contract behave as an economic intermediary? 
-    - Does the contract specification imply correct economic behavior?
-1. A contract's **upgradeability properties**
-    - When I update a specification during an upgrade, which properties of the old contract are preserved, and which are changed?
-    - Are there pathological states that the contract can reach through upgrades?
-    - Are there limitations to a contract's upgradeability?
-1. The behavior of a **system of contracts**
-    - If I specify a contract but implement it modularly, rather than as a monolithic contract, can I be sure it still conforms to the specification?
-    - What does my specification of a system of contracts imply of the system taken as a whole?
 
-For each of these classes of meta properties, we introduce theoretical tools to target and reason about them in ConCert.
 
-## Theoretical Tools to Reason About Meta Properties
+## Formal Tools and Frameworks
 
-To reason about these classes of meta properties, we introduce three (classes of) theoretical tools:
-1. A **contract metaspecification**, to formally reason about a contract specification, including #1 above.
-1. **Contract morphisms**, which formally encode structural relationships between smart contracts, useful to reason about #2 above.
-1. And **equivalences**, **bisimulations**, and **bigraphs** which we use to reason about a system of contracts in terms of a monolithic counterpart for #3 above.
+The formal tools and frameworks developed here so far are:
+
+### Specifications and Metaspecifications
+
+We introduce the notion of a *metaspecification*, which is a specification of a specification. Our core assertion here is that one way to evaluate the correctness of a specification is to formally prove things about it. This is the purpose of a metaspecification.
+
+So far we have only done so on one contract, the [structured pool contract](specifications/StructuredPoolsSpec/StructuredPoolsSpec.v), which is an [experimental pooling contract](https://ieeexplore.ieee.org/abstract/document/10174866) designed for [tokenized carbon credits](https://ledger.pitt.edu/ojs/ledger/article/view/294). We hope to do more.
+
+See related papers:
+* Sorensen, D. (In)Correct Smart Contract Specifications. ICBC 2024.
+* Sorensen, D. Structured Pools for Tokenized Carbon Credits. ICBC CryptoEx 2023.
+* Sorensen, D. Tokenized Carbon Credits. Ledger, 2023.
+
+### Contract Morphisms
+
+We introduce a theoretical tool called a *contract morhpism* in the [contract morphisms module](theories/ContractMorphisms.v). This is a formal, structural relationship between smart contracts. In the `examples/` folder and accompanying [text of my PhD thesis](sorensen-phd-thesis.pdf) there are several examples of using contract morphisms to:
+1. Reuse proofs and properties of previous contract versions when verifying a new contract,
+1. Transport Hoare properties over a morphism,
+1. Specifying upgrades in terms of previous versions,
+1. Formally specifying backwards compatibility, and 
+1. Formally define contract upgradeability via a decomposition into its upgradeability framework and version contracts.
+
+We also use contract morphisms to establish the notion of a *contract bisimulation* in ConCert in the [bisimulation module](theories/Bisimulation.v), which shows a strong structural equivalence between contracts in ConCert and can, in principle, be used for optimizations.
+
+See related paper:
+* Sorensen, D. Towards Formally Specifying and Verifying Smart Contract Upgrades in Coq. FMBC 2024.
+
+### Models of Contract Systems 
+
+Finally, we model systems of contracts with bigraphs in the [contract system module](theories/Bisimulation.v). The aim of this is to be able to specify and formally reason about a system of contracts as if it were a single, monolithic contract. This could prevent incorrect specification of contract systems by separating the core, desired contract behavior from the specification of the contract system infrastructure (how contracts interact).
 
 ## Accompanying Text
 
@@ -32,33 +45,38 @@ This repository is designed to be self-contained, but can also be used as a comp
 
 ## Repository Organization
 
-* The [theories](theories/) folder houses the [theoretical tools mentioned above](#theoretical-tools-to-reason-about-meta-properties), and has three main files:
+* The [theories](theories/) folder houses the formal tools, and has three main files:
     * [ContractMorphisms](theories/ContractMorphisms.v), which develops a theoretical tool called a *contract morphism*
     * [Bisimulation](theories/Bisimulation.v), which develops various notions of equivalences between contracts
     * [ContractSystems](theories/ContractSystems.v), which gives a data structure for iteratively building systems of contracts out of component pieces
-    * It also has a file called [DeFi](theories/DeFi.v), which contains a roadmap for encoding a theory of DeFi and AMMs in ConCert.
-* The [specifications](specifications/) folder houses formalized specifications, and metaspecifications, which for now includes just structured pools
+    * It also has a file called [DeFi](theories/DeFi.v), which contains a roadmap for encoding a theory of DeFi and AMMs in ConCert, and which is in very early (read: nonexistent) stages.
 * The [examples](examples/) folder houses examples of using the techniques mentioned above in verifying smart contracts
 
 
 ## Installing and Compiling
 
-Clone the repository with the `--recursive` tag so that you include the submodule.
+Clone the repository with the `--recursive` tag.
 ```
-git clone git@github.com:differentialderek/FinCert.git --recursive
+git clone git@github.com:dhsorens/FinCert.git --recursive
 ```
 
-Go into the `ConCert/` subdirectory, my fork of the ConCert codebase, and follow the [install instructions there](https://github.com/differentialderek/ConCert/tree/contract_morphisms). Note that installation may take some time, and make sure you're on the `contract_morphisms` branch.
+Navigate into the FinCert directory and run
 
-Now go back to the root `FinCert/` directory, and make the Coq project.
+```
+opam switch create . 4.10.2 --repositories default,coq-released=https://coq.inria.fr/opam/released
+eval $(opam env)
+```
+
+Then navigate into the `ConCert` subdirectory and run
+```
+opam install ./coq-concert.opam --deps-only
+```
+
+These combined actions make a local opam switch for the FinCert directory and install all the necessary dependencies for ConCert.
+
+Now navigate back to the root `FinCert/` directory, and make the Coq project.
 ```
 make
 ```
 
-This should compile on MacOS with (at least) these versions:
-```
-The Coq Proof Assistant, version 8.17.0
-compiled with OCaml 4.10.2
-```
-
-For VSCode users, `VSCoq` seems to work well as a plugin with which to step through proofs.
+(Note, you may run into problems if you make the ConCert project independently of FinCert.)
