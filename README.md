@@ -63,7 +63,7 @@ git clone git@github.com:dhsorens/FinCert.git --recursive
 Navigate into the FinCert directory and run
 
 ```
-opam switch create . 4.10.2 --repositories default,coq-released=https://coq.inria.fr/opam/released
+opam switch create . 4.13.1 --repositories default,coq-released=https://coq.inria.fr/opam/released
 eval $(opam env)
 ```
 
