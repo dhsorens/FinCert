@@ -1,0 +1,1 @@
+# An implementation of a Structured Pool contract which matches its specification
