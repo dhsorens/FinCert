@@ -1,6 +1,7 @@
 # FinCert: Formal Tools for Specifying Financial Smart Contracts
 
-Financial smart contracts are *risk- and property-dense* and can be difficult to specify correctly. Indeed, practitioners of formal verification often say that writing a good specification is the hardest part of formal verification, as efforts of formal verification can be rendered null if the specification is incorrect.
+Financial smart contracts (DeFi contracts) are *risk- and property-dense* and can be difficult to specify correctly. Indeed, practitioners of formal verification often say that writing a good specification is the hardest part of formal verification. 
+Furthermore, efforts of formal verification can be rendered null if the specification is incorrect.
 
 This is an experimental repository whose aim is to develop formal tools with which we can better specify and verify financial smart contracts.
 
@@ -8,7 +9,7 @@ This is an experimental repository whose aim is to develop formal tools with whi
 
 ## Formal Tools and Frameworks
 
-The formal tools and frameworks developed here so far are:
+The formal tools and frameworks developed here thus far are:
 
 ### Specifications and Metaspecifications
 
@@ -16,7 +17,7 @@ We introduce the notion of a *metaspecification*, which is a specification of a 
 
 So far we have only done so on one contract, the [structured pool contract](specifications/StructuredPoolsSpec/StructuredPoolsSpec.v), which is an [experimental pooling contract](https://ieeexplore.ieee.org/abstract/document/10174866) designed for [tokenized carbon credits](https://ledger.pitt.edu/ojs/ledger/article/view/294). We hope to do more.
 
-See related papers:
+See related papers (most relevant to least):
 * Sorensen, D. (In)Correct Smart Contract Specifications. ICBC 2024.
 * Sorensen, D. Structured Pools for Tokenized Carbon Credits. ICBC CryptoEx 2023.
 * Sorensen, D. Tokenized Carbon Credits. Ledger, 2023.
@@ -51,7 +52,7 @@ This repository is designed to be self-contained, but can also be used as a comp
     * [ContractSystems](theories/ContractSystems.v), which gives a data structure for iteratively building systems of contracts out of component pieces
     * It also has a file called [DeFi](theories/DeFi.v), which contains a roadmap for encoding a theory of DeFi and AMMs in ConCert, and which is in very early (read: nonexistent) stages.
 * The [examples](examples/) folder houses examples of using the techniques mentioned above in verifying smart contracts
-
+* The [contracts](contracts/) folder contains example contracts which have been specified and verified with these formal tools (may be under construction).
 
 ## Installing and Compiling
 
