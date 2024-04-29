@@ -1,3 +1,3 @@
 # Contracts
 
-This folder contains formally verified contracts in FinCert
+This folder contains contracts formally specified and verified using the formal tools of FinCert.
