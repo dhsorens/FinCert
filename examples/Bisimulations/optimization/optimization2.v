@@ -442,50 +442,6 @@ Proof.
     -   cbn. admit.
 Admitted.
 
-Definition f : ContractMorphism C C' := 
-    build_contract_morphism C C' setup_morph msg_morph state_morph error_morph 
-        init_coherence recv_coherence.
-
-(* a morphism C' -> C *)
-Definition msg_morph' (e : entrypoint') : entrypoint := 
-    match e with | incr' _ => incr tt end.
-Definition setup_morph' : setup' -> setup := id.
-Definition state_morph' (st : storage') : storage := 
-        {| n_1 := st.(n) ; extra_data := tt ; |}.
-Definition error_morph' : error' -> error := id.
-
-Lemma init_coherence' : init_coherence_prop C' C setup_morph' state_morph' error_morph'.
-Proof. now unfold init_coherence_prop. Qed.
-
-Lemma recv_coherence' : recv_coherence_prop C' C msg_morph' state_morph' error_morph'.
-Proof.
-    unfold recv_coherence_prop.
-    intros.
-    simpl.
-    unfold result_functor, receive, receive'.
-    destruct op_msg; auto.
-    now destruct e.
-Qed.
-
-Definition g : ContractMorphism C' C := 
-    build_contract_morphism C' C setup_morph' msg_morph' state_morph' error_morph' 
-        init_coherence' recv_coherence'.
-
-
-(* f and g are isomorphisms *)
-Theorem c_c'_equivalent : is_iso_cm f g.
-Proof.
-    unfold is_iso_cm, compose_cm, id_cm.
-    split; apply eq_cm; cbn;
-    unfold setup_morph, setup_morph', msg_morph, msg_morph', state_morph, state_morph',
-        error_morph, error_morph';
-    auto;
-    apply functional_extensionality;
-    intros.
-    -   now destruct x, u.
-    -   now destruct x, extra_data0.
-    -   now destruct x, u.
-Qed.
 
 End Isomorphism.
 
