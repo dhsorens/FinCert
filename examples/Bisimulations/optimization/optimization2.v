@@ -443,6 +443,73 @@ Proof.
 Admitted.
 
 
+Definition f_arr_all : ContractMorphism C_arr C_ll := 
+    build_contract_morphism C_arr C_ll setup_morph msg_morph state_morph error_morph 
+        init_coherence recv_coherence.
+
+(** the inverse isomorphism *)
+
+Definition msg_morph' (e : entrypoint_ll) : entrypoint_arr := 
+    match e with
+    | addOwner_ll x => addOwner {| n_owner := x.(n_owner_ll) - 1 |}
+    | removeOwner_ll x => removeOwner {| r_owner := x.(r_owner_ll) |}
+    | swapOwners_ll x => swapOwners {| owner_old_arr := x.(owner_old_ll) ; owner_new_arr := x.(owner_new_ll) |}
+    | isOwner_ll x => isOwner {| i_owner := x.(i_owner_ll) ; ack_is := x.(ack_is_ll) |}
+    | getOwners_ll x => getOwners {| ack_get := x.(ack_get_ll) |}
+    end.
+
+Definition state_morph' (st : storage_ll) : storage_arr :=
+    {| owners_arr :=
+        fixed_point_to_array st.(owners_ll) [] |}.
+
+Definition setup_morph' := state_morph'.
+
+Definition error_morph' : error -> error := id.
+
+Lemma init_coherence' : init_coherence_prop C_ll C_arr setup_morph' state_morph' error_morph.
+Proof. now unfold init_coherence_prop. Qed.
+
+Lemma recv_coherence' : recv_coherence_prop C_ll C_arr msg_morph' state_morph' error_morph.
+Proof.
+    unfold recv_coherence_prop.
+    intros.
+    simpl.
+    unfold result_functor, receive, receive'.
+    destruct op_msg; auto.
+    destruct e.
+    (* add_owner_ll -> add_owner_arr *)
+    -   cbn.
+        admit.
+    (* remove_owner_ll -> remove_owner_arr *)
+    -   cbn.
+        admit.
+    (* swap_owners_ll -> swap_owners_arr *)
+    -   cbn.
+        admit.
+    (* is_owner_ll -> is_owner_arr *)
+    -   cbn.
+        admit.
+    (* get_owners_ll -> get_owners_arr *)
+    -   cbn.
+        admit.
+Admitted.
+
+Definition f_all_arr : ContractMorphism C_ll C_arr := 
+    build_contract_morphism C_ll C_arr setup_morph' msg_morph' state_morph' error_morph 
+        init_coherence' recv_coherence'.
+
+
+(* the isomorphism *)
+Theorem iso_ll_arr : is_iso_cm f_arr_all f_all_arr.
+Proof.
+    unfold is_iso_cm.
+    split.
+    (* compose_cm f_all_arr f_arr_all *)
+    +   admit.
+    (* compose_cm f_arr_all f_all_arr *)
+    +   admit.
+Admitted.
+
 End Isomorphism.
 
 (** porting the specification over the isomorphism *)
