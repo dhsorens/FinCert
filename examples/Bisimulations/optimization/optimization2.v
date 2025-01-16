@@ -41,8 +41,7 @@ Definition error := N.
 
     This contract manages owners with an array and not a linked list.
     *)
-Section ContractDefinition.
-
+Section ContractUsingArray.
     (** contract types aside from the entrypoint type *)
     Record storage_arr := { owners_arr : list N }.
     Definition setup_arr := storage_arr.
@@ -112,14 +111,13 @@ Section ContractDefinition.
 
     Definition C_arr : Contract setup_arr entrypoint_arr storage_arr error := 
         build_contract init_arr receive_arr.
-
-End ContractDefinition.
+End ContractUsingArray.
 
 
 (* The optimized contract, which is correct (by definition) when it has the same
     input-output behavior of the original contract C_array *)
 Definition SENTINEL_OWNERS : N := 0.
-Section ContractDefinition. (* linked lists *)
+Section ContractUsingLinkedList. (* linked lists *)
     (** SENTINEL_OWNERS is used to traverse `owners`, so that:
             1. `owners[SENTINEL_OWNERS]` contains the first owner
             2. `owners[last_owner]` points back to SENTINEL_OWNERS
@@ -136,59 +134,56 @@ Section ContractDefinition. (* linked lists *)
     (* error codes *)
     Section ErrorCodes.
         Definition error_LINK_NOT_FOUND : error := 1.
-
     End ErrorCodes.
 
     (* some auxiliary functions for linked lists *)
     Section Aux.
+        Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
+            (* get the keys *)
+            let keys := FMap.keys owners in
+            (* find the previous owner *)
+            let prev_owner := List.fold_right (fun k acc => 
+                match (FMap.find k owners) with 
+                | Some o => if N.eqb o owner then k else acc
+                | None => acc
+                end) 0 keys in
+            (* check the result *)
+            if N.eqb prev_owner 0 then Err error_LINK_NOT_FOUND else
+            Ok prev_owner.
 
-    Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
-        (* get the keys *)
-        let keys := FMap.keys owners in
-        (* find the previous owner *)
-        let prev_owner := List.fold_right (fun k acc => 
-            match (FMap.find k owners) with 
-            | Some o => if N.eqb o owner then k else acc
-            | None => acc
-            end) 0 keys in
-        (* check the result *)
-        if N.eqb prev_owner 0 then Err error_LINK_NOT_FOUND else
-        Ok prev_owner.
+        Definition has_prev_owner (owner : N) (owners : FMap N N) : bool := 
+            match find_prev_owner owner owners with 
+            | Ok _ => true
+            | Err _ => false
+            end.
 
-    Definition has_prev_owner (owner : N) (owners : FMap N N) : bool := 
-        match find_prev_owner owner owners with 
-        | Ok _ => true
-        | Err _ => false
-        end.
-
-    Definition find_owner_result (owner : N) (owners : FMap N N) : result N error :=
-        match FMap.find owner owners with
-            | Some o => Ok o
-            | None => Err error_LINK_NOT_FOUND
-        end.
-    
-    Definition insert_ll (o : N) (accum : FMap N N) : result (FMap N N) error :=
-        (* check the owner isn't the sentinel *)
-        if N.eqb o SENTINEL_OWNERS then Err 0 else
-        (* no duplicates *)
-        if has_prev_owner o accum then Err 0 else
-        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-        do o' <- find_owner_result SENTINEL_OWNERS accum ;
-        let accum' := FMap.add o o' accum in 
-        (* owners[SENTINEL_OWNERS] = owner; *)
-        Ok (FMap.add SENTINEL_OWNERS o accum').
-    
-    Definition insert_ll_2 (o : N) (accum : FMap N N) : FMap N N :=
-        (* check the owner isn't the sentinel *)
-        if N.eqb (o + 1) SENTINEL_OWNERS then accum else
-        (* no duplicates *)
-        if has_prev_owner (o + 1) accum then accum else
-        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-        match FMap.find SENTINEL_OWNERS accum with | None => accum | Some o' =>
-        let accum' := FMap.add (o + 1) o' accum in 
-        (* owners[SENTINEL_OWNERS] = owner; *)
-        FMap.add SENTINEL_OWNERS (o + 1) accum' end.
-
+        Definition find_owner_result (owner : N) (owners : FMap N N) : result N error :=
+            match FMap.find owner owners with
+                | Some o => Ok o
+                | None => Err error_LINK_NOT_FOUND
+            end.
+        
+        Definition insert_ll (o : N) (accum : FMap N N) : result (FMap N N) error :=
+            (* check the owner isn't the sentinel *)
+            if N.eqb o SENTINEL_OWNERS then Err 0 else
+            (* no duplicates *)
+            if has_prev_owner o accum then Err 0 else
+            (* owners[owner] = owners[SENTINEL_OWNERS]; *)
+            do o' <- find_owner_result SENTINEL_OWNERS accum ;
+            let accum' := FMap.add o o' accum in 
+            (* owners[SENTINEL_OWNERS] = owner; *)
+            Ok (FMap.add SENTINEL_OWNERS o accum').
+        
+        Definition insert_ll_2 (o : N) (accum : FMap N N) : FMap N N :=
+            (* check the owner isn't the sentinel *)
+            if N.eqb (o + 1) SENTINEL_OWNERS then accum else
+            (* no duplicates *)
+            if has_prev_owner (o + 1) accum then accum else
+            (* owners[owner] = owners[SENTINEL_OWNERS]; *)
+            match FMap.find SENTINEL_OWNERS accum with | None => accum | Some o' =>
+            let accum' := FMap.add (o + 1) o' accum in 
+            (* owners[SENTINEL_OWNERS] = owner; *)
+            FMap.add SENTINEL_OWNERS (o + 1) accum' end.
     End Aux.
 
     (* entrypoint functions *)
@@ -258,7 +253,6 @@ Section ContractDefinition. (* linked lists *)
         Global Instance storage_ll_serializable : Serializable storage_ll := todo.
     End Serialization.
 
-
     (* init function definition *)
     Definition init_ll (_ : Chain) (_ : ContractCallContext) (init_st : setup_ll) :
         result storage_ll error := 
@@ -278,9 +272,7 @@ Section ContractDefinition. (* linked lists *)
 
     Definition C_ll : Contract setup_ll entrypoint_ll storage_ll error := 
         build_contract init_ll receive_ll.
-
-End ContractDefinition.
-
+End ContractUsingLinkedList.
 
 
 (* The formal specification *)
@@ -291,75 +283,68 @@ Section Specification.
 (* No duplicate owners *)
 (* 0 and sentinel (?) are never owners *)
 (* functional specifications of each *)
-
+    
 
 (** the isomorphism *)
 Section Isomorphism.
 
 Section Aux.
+    Definition empty_map : FMap N N := FMap.empty.
+    Definition sentinal_init : FMap N N := FMap.add SENTINEL_OWNERS SENTINEL_OWNERS empty_map.
 
-(* Definition insert_ll () *)
-Definition empty_map : FMap N N := FMap.empty.
-Definition sentinal_init : FMap N N := FMap.add SENTINEL_OWNERS SENTINEL_OWNERS empty_map.
-
-(* auxiliary functions for linked lists *)
-
-Fixpoint has_duplicate (l : list N) : bool :=
-  match l with
-  | [] => false
-  | x :: xs => if existsb (N.eqb x) xs then true else has_duplicate xs
-  end.
-
-(* to use, accum must initialize as sentinal_init *)
-Fixpoint array_to_linked_list_rec (l : list N) (accum : FMap N N) : result (FMap N N) error := 
-    match l with 
-    | [] => Ok accum
-    | a_hd :: a_tl => 
-        do accum' <- insert_ll a_hd accum ;
-        array_to_linked_list_rec a_tl accum'
+    Fixpoint has_duplicate (l : list N) : bool :=
+    match l with
+    | [] => false
+    | x :: xs => if existsb (N.eqb x) xs then true else has_duplicate xs
     end.
 
-Fixpoint array_to_linked_list_rec2 (l : list N) (accum : FMap N N) : FMap N N := 
-    match l with 
-    | [] => accum
-    | a_hd :: a_tl => 
-        array_to_linked_list_rec2 a_tl (insert_ll_2 a_hd accum)
-    end.
+    Fixpoint array_to_linked_list_rec (l : list N) (accum : FMap N N) : result (FMap N N) error := 
+        match l with 
+        | [] => Ok accum
+        | a_hd :: a_tl => 
+            do accum' <- insert_ll a_hd accum ;
+            array_to_linked_list_rec a_tl accum'
+        end.
 
-Definition fixed_point_to_array (l : FMap N N) (accum : list N) : list N := 
-    let keys := FMap.keys l in
-    (* start with sentinel *)
-    (* iterate through the keys *)
-    (* decrease as you go *)
-    todo.
+    Fixpoint array_to_linked_list_rec2 (l : list N) (accum : FMap N N) : FMap N N := 
+        match l with 
+        | [] => accum
+        | a_hd :: a_tl => 
+            array_to_linked_list_rec2 a_tl (insert_ll_2 a_hd accum)
+        end.
 
-Definition find_owner_null (o : N) (owners : FMap N N) : N := 
-    match FMap.find o owners with | Some o' => o' | None => 0 end.    
-Definition ll_pair_swap (res : result_ll) : result_ll := 
-    match res with 
-    | Ok (st, acts) =>
-        let owners := owners_ll st in 
-        let owner1 := find_owner_null SENTINEL_OWNERS owners in
-        let owner2 := find_owner_null owner1 owners in 
-        let owner3 := find_owner_null owner2 owners in
-        let owners' := FMap.add SENTINEL_OWNERS owner2 owners in 
-        let owners' := FMap.add owner2 owner1 owners' in 
-        let owners' := FMap.add owner1 owner3 owners' in 
-        Ok ({| owners_ll := owners' |}, acts)
-    | Err e => Err e
-    end.
+    Definition fixed_point_to_array (l : FMap N N) (accum : list N) : list N := 
+        let keys := FMap.keys l in
+        (* start with sentinel *)
+        (* iterate through the keys *)
+        (* decrease as you go *)
+        todo.
 
-Definition add_owner_ll_res (r : result_ll) (x : _add_owner_ll) : result_ll :=
-    match r with 
-    | Ok (st, acts) =>
-        let new_owner := n_owner_ll x in 
-        let owners := owners_ll st in
-        do owners_ll_new <- insert_ll new_owner owners;
-        Ok ({| owners_ll := owners_ll_new |}, acts)
-    | Err e => Err e 
-    end.
+    Definition find_owner_null (o : N) (owners : FMap N N) : N := 
+        match FMap.find o owners with | Some o' => o' | None => 0 end.    
+    Definition ll_pair_swap (res : result_ll) : result_ll := 
+        match res with 
+        | Ok (st, acts) =>
+            let owners := owners_ll st in 
+            let owner1 := find_owner_null SENTINEL_OWNERS owners in
+            let owner2 := find_owner_null owner1 owners in 
+            let owner3 := find_owner_null owner2 owners in
+            let owners' := FMap.add SENTINEL_OWNERS owner2 owners in 
+            let owners' := FMap.add owner2 owner1 owners' in 
+            let owners' := FMap.add owner1 owner3 owners' in 
+            Ok ({| owners_ll := owners' |}, acts)
+        | Err e => Err e
+        end.
 
-
+    Definition add_owner_ll_res (r : result_ll) (x : _add_owner_ll) : result_ll :=
+        match r with 
+        | Ok (st, acts) =>
+            let new_owner := n_owner_ll x in 
+            let owners := owners_ll st in
+            do owners_ll_new <- insert_ll new_owner owners;
+            Ok ({| owners_ll := owners_ll_new |}, acts)
+        | Err e => Err e 
+        end.
 End Aux.
 
 (** m : C_arr -> C_ll *)
@@ -505,10 +490,34 @@ Proof.
     unfold is_iso_cm.
     split.
     (* compose_cm f_all_arr f_arr_all *)
-    +   admit.
+    -   apply eq_cm.
+        +   simpl.
+            apply functional_extensionality.
+            intros.
+            simpl.
+            destruct x.
+            unfold setup_morph, state_morph, setup_morph', state_morph'.
+            cbn.
+            induction owners_arr0; simpl.
+            (* add_owner_ll *)
+            --  admit.
+            --  admit.
+        +   admit.
+        +   admit.
+        +   admit.
     (* compose_cm f_arr_all f_all_arr *)
-    +   admit.
+    -   apply eq_cm.
+        +   admit.
+        +   admit.
+        +   admit.
+        +   admit.
 Admitted.
+
+Theorem iso_arr_all : is_iso_cm f_all_arr f_arr_all.
+Proof.
+    apply iso_cm_symmetric.
+    apply iso_ll_arr.
+Qed.
 
 End Isomorphism.
 
