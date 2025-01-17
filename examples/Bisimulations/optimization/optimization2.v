@@ -14,6 +14,7 @@ From Coq Require Import QArith_base.
 From Coq Require Import String.
 From Coq Require Import List.
 From Coq Require Import Fin.
+From Coq Require Import Lia.
 From Coq.Init Require Import Byte.
 
 Import ListNotations.
@@ -35,6 +36,11 @@ Set Nonrecursive Elimination Schemes.
 Axiom todo : forall {A}, A.
 
 Definition error := N.
+
+(* error codes *)
+Section ErrorCodes.
+    Definition error_LINK_NOT_FOUND : error := 1.
+End ErrorCodes.
 
 (*  The reference implementation contract, which serves as a specification
     to a later contract
@@ -114,9 +120,63 @@ Section ContractUsingArray.
 End ContractUsingArray.
 
 
+(* Our implementation of a linked list with associated lemmas *)
+Definition SENTINEL_OWNERS : N := 0.
+
+Section LinkedList.
+
+    Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
+        (* get the keys *)
+        let keys := FMap.keys owners in
+        (* find the previous owner *)
+        let prev_owner := List.fold_right (fun k acc => 
+            match (FMap.find k owners) with 
+            | Some o => if N.eqb o owner then k else acc
+            | None => acc
+            end) 0 keys in
+        (* check the result *)
+        if N.eqb prev_owner 0 then Err error_LINK_NOT_FOUND else
+        Ok prev_owner.
+
+    Definition has_prev_owner (owner : N) (owners : FMap N N) : bool := 
+        match find_prev_owner owner owners with 
+        | Ok _ => true
+        | Err _ => false
+        end.
+
+    Definition find_owner_result (owner : N) (owners : FMap N N) : result N error :=
+        match FMap.find owner owners with
+            | Some o => Ok o
+            | None => Err error_LINK_NOT_FOUND
+        end.
+
+    Definition insert_ll (o : N) (accum : FMap N N) : result (FMap N N) error :=
+        (* check the owner isn't the sentinel *)
+        if N.eqb o SENTINEL_OWNERS then Err 0 else
+        (* no duplicates *)
+        if has_prev_owner o accum then Err 0 else
+        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
+        do o' <- find_owner_result SENTINEL_OWNERS accum ;
+        let accum' := FMap.add o o' accum in 
+        (* owners[SENTINEL_OWNERS] = owner; *)
+        Ok (FMap.add SENTINEL_OWNERS o accum').
+
+    Definition insert_ll_2 (o : N) (accum : FMap N N) : FMap N N :=
+        (* check the owner isn't the sentinel *)
+        if N.eqb (o + 1) SENTINEL_OWNERS then accum else
+        (* no duplicates *)
+        if has_prev_owner (o + 1) accum then accum else
+        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
+        match FMap.find SENTINEL_OWNERS accum with | None => accum | Some o' =>
+        let accum' := FMap.add (o + 1) o' accum in 
+        (* owners[SENTINEL_OWNERS] = owner; *)
+        FMap.add SENTINEL_OWNERS (o + 1) accum' end.
+
+
+End LinkedList.
+
 (* The optimized contract, which is correct (by definition) when it has the same
     input-output behavior of the original contract C_array *)
-Definition SENTINEL_OWNERS : N := 0.
 Section ContractUsingLinkedList. (* linked lists *)
     (** SENTINEL_OWNERS is used to traverse `owners`, so that:
             1. `owners[SENTINEL_OWNERS]` contains the first owner
@@ -129,62 +189,6 @@ Section ContractUsingLinkedList. (* linked lists *)
 
     Definition setup_ll := storage_ll.
     Definition result_ll : Type := result (storage_ll * list ActionBody) error.
-
-
-    (* error codes *)
-    Section ErrorCodes.
-        Definition error_LINK_NOT_FOUND : error := 1.
-    End ErrorCodes.
-
-    (* some auxiliary functions for linked lists *)
-    Section Aux.
-        Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
-            (* get the keys *)
-            let keys := FMap.keys owners in
-            (* find the previous owner *)
-            let prev_owner := List.fold_right (fun k acc => 
-                match (FMap.find k owners) with 
-                | Some o => if N.eqb o owner then k else acc
-                | None => acc
-                end) 0 keys in
-            (* check the result *)
-            if N.eqb prev_owner 0 then Err error_LINK_NOT_FOUND else
-            Ok prev_owner.
-
-        Definition has_prev_owner (owner : N) (owners : FMap N N) : bool := 
-            match find_prev_owner owner owners with 
-            | Ok _ => true
-            | Err _ => false
-            end.
-
-        Definition find_owner_result (owner : N) (owners : FMap N N) : result N error :=
-            match FMap.find owner owners with
-                | Some o => Ok o
-                | None => Err error_LINK_NOT_FOUND
-            end.
-        
-        Definition insert_ll (o : N) (accum : FMap N N) : result (FMap N N) error :=
-            (* check the owner isn't the sentinel *)
-            if N.eqb o SENTINEL_OWNERS then Err 0 else
-            (* no duplicates *)
-            if has_prev_owner o accum then Err 0 else
-            (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-            do o' <- find_owner_result SENTINEL_OWNERS accum ;
-            let accum' := FMap.add o o' accum in 
-            (* owners[SENTINEL_OWNERS] = owner; *)
-            Ok (FMap.add SENTINEL_OWNERS o accum').
-        
-        Definition insert_ll_2 (o : N) (accum : FMap N N) : FMap N N :=
-            (* check the owner isn't the sentinel *)
-            if N.eqb (o + 1) SENTINEL_OWNERS then accum else
-            (* no duplicates *)
-            if has_prev_owner (o + 1) accum then accum else
-            (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-            match FMap.find SENTINEL_OWNERS accum with | None => accum | Some o' =>
-            let accum' := FMap.add (o + 1) o' accum in 
-            (* owners[SENTINEL_OWNERS] = owner; *)
-            FMap.add SENTINEL_OWNERS (o + 1) accum' end.
-    End Aux.
 
     (* entrypoint functions *)
     Record _add_owner_ll := { n_owner_ll : N }.
@@ -367,6 +371,10 @@ Definition error_morph : error -> error := id.
 Lemma init_coherence : init_coherence_prop C_arr C_ll setup_morph state_morph error_morph.
 Proof. now unfold init_coherence_prop. Qed.
 
+Lemma pair_lem { A B : Type } : forall (a a' : A) (b b' : B),
+    a = a' /\ b = b' -> (a, b) = (a', b').
+Proof. intros. destruct H. now subst. Qed.
+ 
 Lemma recv_coherence : recv_coherence_prop C_arr C_ll msg_morph state_morph error_morph.
 Proof.
     unfold recv_coherence_prop.
@@ -388,10 +396,9 @@ Proof.
                 assert ((n_owner0 + 1 =? SENTINEL_OWNERS)%N = false) as H_not_sentinel.
                 { unfold SENTINEL_OWNERS. now induction n_owner0. }
                 rewrite H_not_sentinel. clear H_not_sentinel.
-                assert (has_prev_owner (n_owner0 + 1) (FMap.add 0 SENTINEL_OWNERS empty_map) = false)
-                as H_no_prev_owner.
-                { admit. } (* probably has to be proved elsewhere, assumed as an invariant *)
-                rewrite H_no_prev_owner. clear H_no_prev_owner.
+                replace (has_prev_owner (n_owner0 + 1) (FMap.add 0 SENTINEL_OWNERS empty_map))
+                with (false). (* no prev owner *)
+                2: { admit. } (* probably has to be proved elsewhere, assumed as an invariant *)
                 unfold find_owner_result.
                 assert (FMap.find SENTINEL_OWNERS (FMap.add 0 SENTINEL_OWNERS empty_map) = Some 0)
                 as H_sentinel_find.
@@ -408,18 +415,82 @@ Proof.
                     {| n_owner_ll := n_owner0 + 1 |})
                 {| n_owner_ll := a |}))
             as H_apply_induction.
-            {   unfold add_owner_ll_res, add_owner_ll, state_morph, ll_pair_swap.
-                cbn. (* good place to start might be *)
+            {   clear IHowners_arr0.
+                unfold add_owner_ll_res, add_owner_ll, state_morph, ll_pair_swap,
+                    insert_ll, insert_ll_2, SENTINEL_OWNERS.
+                cbn.
+                assert ((n_owner0 + 1 =? 0)%N = false) as H_nzero.
+                {  now destruct n_owner0. }
+                rewrite H_nzero. clear H_nzero.
+                assert (has_prev_owner (n_owner0 + 1)
+                (array_to_linked_list_rec2 owners_arr0
+                   (insert_ll_2 a (FMap.add 0 SENTINEL_OWNERS empty_map))) = false)
+                as H_no_dup.
+                {   admit. } (* probably has to be proved elsewhere, assumed as an invariant *)
+                rewrite H_no_dup. clear H_no_dup.
+                assert (find_owner_result 0
+                (array_to_linked_list_rec2 owners_arr0
+                   (insert_ll_2 a (FMap.add 0 SENTINEL_OWNERS empty_map))) = Ok a)
+                as H_arr.
+                {   unfold array_to_linked_list_rec2, insert_ll_2.
+                    induction owners_arr0; cbn.
+                    -   admit. (* base case *)
+                    -   admit. (* inductive step *)
+                }
+                rewrite H_arr. clear H_arr.
+                assert (has_prev_owner (n_owner0 + 1)
+                  (array_to_linked_list_rec2 owners_arr0
+                     (FMap.add 0 SENTINEL_OWNERS empty_map)) = false) as H_no_dup.
+                { admit. } (* no duplicates *)
+                rewrite H_no_dup. clear H_no_dup.
+                
+                
                 admit. (* TODO unfold the computation .. add_owner_ll_res might be wrong*) }
-            rewrite H_apply_induction.
-            admit. (* TODO unfold the computation *)
+            rewrite H_apply_induction. clear H_apply_induction.
+            rewrite <- IHowners_arr0. clear IHowners_arr0.
+            assert (add_owner_arr {| owners_arr := owners_arr0 |}
+                {| n_owner := n_owner0 |} = Ok ({| owners_arr := n_owner0 :: owners_arr0 |}, []))
+                as H_add_o.
+            {   unfold add_owner_arr. cbn. }
+            rewrite H_add_o. clear H_add_o.
+            assert (add_owner_arr {| owners_arr := a :: owners_arr0 |}
+            {| n_owner := n_owner0 |} = Ok ({| owners_arr := n_owner0 :: a :: owners_arr0 |}, []))
+            as H_add_o.
+            {   unfold add_owner_arr. cbn. }
+            rewrite H_add_o. clear H_add_o.
+            assert ((add_owner_ll_res
+            (Ok (state_morph {| owners_arr := n_owner0 :: owners_arr0 |}, []))
+            {| n_owner_ll := a |}) = 
+            Ok (state_morph {| owners_arr := a :: n_owner0 :: owners_arr0 |}, []))
+            as H_add_o.
+            {   unfold add_owner_ll_res. cbn. }
+            rewrite H_add_o. clear H_add_o.
+            unfold state_morph.
+            unfold owners_arr.
+            destruct owners_arr0.
+            *   (* if swap is implemented right this will work by just simplifying *)
+                unfold ll_pair_swap, array_to_linked_list_rec2, sentinal_init.
+                cbn.
+                apply f_equal.
+                apply pair_lem.
+                split; auto.
+                apply f_equal.
+                unfold SENTINEL_OWNERS.
+                replace ((find_owner_null 0
+                (insert_ll_2 n_owner0 (insert_ll_2 a (FMap.add 0 0 empty_map)))))
+                with (n_owner0).
+                2 : { admit. }
+                
+                
+
+                admit.
+            *   (* now you have three to work with *)
+                admit.
     (* remove_owner_arr -> remove_owner_ll *)
     -   cbn.
-        
         admit.
     (* swap_owners_arr -> swap_owners_ll *)
     -   cbn.
-        
         admit.
     (* is_owner_arr -> is_owner_ll *)
     -   cbn. admit.
