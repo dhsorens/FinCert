@@ -82,6 +82,11 @@ Section ContractUsingArray.
     Definition get_owners_arr (st : storage_arr) (x : _get_owners_arr) : result_arr :=
         let act := act_call x.(ack_get) 0 (serialize st.(owners_arr)) in
         Ok (st, [act]).
+    
+    (* Inductive entrypoint :=
+    | addOwner (o : N) (* *)
+    | removeOwner (o : N)
+    | swapOwners (o_fst o_snd : N). *)
 
     Inductive entrypoint_arr :=
         | addOwner (x : _add_owner_arr)
@@ -123,6 +128,7 @@ End ContractUsingArray.
 (* Our implementation of a linked list with associated lemmas *)
 Definition SENTINEL_OWNERS : N := 0.
 
+(* a small library for linked lists *)
 Section LinkedList.
 
     Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
@@ -172,7 +178,12 @@ Section LinkedList.
         (* owners[SENTINEL_OWNERS] = owner; *)
         FMap.add SENTINEL_OWNERS (o + 1) accum' end.
 
-
+        (*
+            n_owner0 =
+                find_owner_null 0
+                (insert_ll_2 n_owner0 (insert_ll_2 a (FMap.add 0 0 empty_map)))
+        *)
+    
 End LinkedList.
 
 (* The optimized contract, which is correct (by definition) when it has the same
@@ -499,7 +510,7 @@ Proof.
 Admitted.
 
 
-Definition f_arr_all : ContractMorphism C_arr C_ll := 
+Definition f_arr_ll : ContractMorphism C_arr C_ll := 
     build_contract_morphism C_arr C_ll setup_morph msg_morph state_morph error_morph 
         init_coherence recv_coherence.
 
@@ -550,17 +561,17 @@ Proof.
         admit.
 Admitted.
 
-Definition f_all_arr : ContractMorphism C_ll C_arr := 
+Definition f_ll_arr : ContractMorphism C_ll C_arr := 
     build_contract_morphism C_ll C_arr setup_morph' msg_morph' state_morph' error_morph 
         init_coherence' recv_coherence'.
 
 
 (* the isomorphism *)
-Theorem iso_ll_arr : is_iso_cm f_arr_all f_all_arr.
+Theorem iso_ll_arr : is_iso_cm f_arr_ll f_ll_arr.
 Proof.
     unfold is_iso_cm.
     split.
-    (* compose_cm f_all_arr f_arr_all *)
+    (* compose_cm f_ll_arr f_arr_ll *)
     -   apply eq_cm.
         +   simpl.
             apply functional_extensionality.
@@ -576,7 +587,7 @@ Proof.
         +   admit.
         +   admit.
         +   admit.
-    (* compose_cm f_arr_all f_all_arr *)
+    (* compose_cm f_arr_ll f_ll_arr *)
     -   apply eq_cm.
         +   admit.
         +   admit.
@@ -584,7 +595,7 @@ Proof.
         +   admit.
 Admitted.
 
-Theorem iso_arr_all : is_iso_cm f_all_arr f_arr_all.
+Theorem iso_arr_all : is_iso_cm f_ll_arr f_arr_ll.
 Proof.
     apply iso_cm_symmetric.
     apply iso_ll_arr.
