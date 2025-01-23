@@ -23,7 +23,7 @@ Open Scope string.
 
 (** An example of a contract specification via bisimulation.
 
-    In this example 
+    TODO paragraph on linked lists and arrays
 *)
 
 
@@ -35,581 +35,329 @@ Set Nonrecursive Elimination Schemes.
 
 Axiom todo : forall {A}, A.
 
+Inductive entrypoint :=
+    | addOwner (a : N) (* to add a as an owner ID *)
+    | removeOwner (a : N) (* to remove a as an owner ID *)
+    | swapOwners (a_fst a_snd : N). (* to swap a_fst for a_snd as owners *)
+
+Definition setup := unit.
+
+(* our contracts have separate storage types *)
+Definition owners_arr := list N.
+Definition owners_ll := FMap N N.
+
+Section StateAux.
+    Definition SENTINEL_OWNERS := 0.
+    Definition empty_array : list N := [].
+    Definition empty_linked_list : FMap N N := FMap.add SENTINEL_OWNERS SENTINEL_OWNERS FMap.empty.
+End StateAux.
+
 Definition error := N.
 
-(* error codes *)
 Section ErrorCodes.
+    Definition error_NO_ENTRYPOINT : error := 0.
     Definition error_LINK_NOT_FOUND : error := 1.
 End ErrorCodes.
 
-(*  The reference implementation contract, which serves as a specification
-    to a later contract
+Section Serialization.
+    Global Instance entrypoint_serializable : Serializable entrypoint :=
+    Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners>.
+    Global Instance arr_serializable : Serializable owners_arr := todo.
+    Global Instance ll_serializable : Serializable owners_ll := todo.
+End Serialization.
 
-    This contract manages owners with an array and not a linked list.
-    *)
+(* the contract that uses an array, owners_arr *)
 Section ContractUsingArray.
-    (** contract types aside from the entrypoint type *)
-    Record storage_arr := { owners_arr : list N }.
-    Definition setup_arr := storage_arr.
-    Definition result_arr : Type := result (storage_arr * list ActionBody) error.
+    Definition result_arr := result (owners_arr * list ActionBody) error.
 
-    (* entrypoint functions *)
-    Record _add_owner_arr := { n_owner : N }.
-    Definition add_owner_arr (st : storage_arr) (x : _add_owner_arr) : result_arr :=
-        (* check owner isn't in the list (no duplicates allowed) *)
-        if List.existsb (N.eqb x.(n_owner)) st.(owners_arr) then Err 0 else
-        (* append owner *)
-        Ok ({| owners_arr := x.(n_owner) :: st.(owners_arr) |}, []).
-
-    Record _remove_owner_arr := { r_owner : N }.
-    Definition remove_owner_arr (st : storage_arr) (x : _remove_owner_arr) : result_arr :=
-        let new_owners := List.remove N.eq_dec x.(r_owner) st.(owners_arr) in
-        Ok ({| owners_arr := new_owners |}, []).
-
-    Record _swap_owners_arr := { owner_old_arr : N ; owner_new_arr : N }.
-    Definition swap_owners_arr (st : storage_arr) (x : _swap_owners_arr) : result_arr :=
-        let new_owners := List.map (fun o =>
-            if N.eqb o x.(owner_old_arr) then x.(owner_new_arr) else
-        if N.eqb o x.(owner_new_arr) then x.(owner_old_arr) else o) st.(owners_arr) in
-        Ok ({| owners_arr := new_owners |}, []).
-
-    Record _is_owner_arr := { i_owner : N ; ack_is : Address }.
-    Definition is_owner_arr (st : storage_arr) (x : _is_owner_arr) : result_arr := 
-        let act := act_call x.(ack_is) 0 (serialize (N.eqb x.(i_owner) 1)) in
-        Ok (st, [act]).
-
-    Record _get_owners_arr := { ack_get : Address }.
-    Definition get_owners_arr (st : storage_arr) (x : _get_owners_arr) : result_arr :=
-        let act := act_call x.(ack_get) 0 (serialize st.(owners_arr)) in
-        Ok (st, [act]).
+    Definition add_owner_arr (a : N) (st : owners_arr) : result_arr :=
+        Ok (a :: st, []).
     
-    (* Inductive entrypoint :=
-    | addOwner (o : N) (* *)
-    | removeOwner (o : N)
-    | swapOwners (o_fst o_snd : N). *)
+    Definition remove_owner_arr (a : N) (st : owners_arr) : result_arr :=
+        Ok (List.remove N.eq_dec a st, []).
 
-    Inductive entrypoint_arr :=
-        | addOwner (x : _add_owner_arr)
-        | removeOwner (x : _remove_owner_arr)
-        | swapOwners (x : _swap_owners_arr)
-        | isOwner (x : _is_owner_arr)
-        | getOwners (x : _get_owners_arr).
+    Definition swap_owners_arr (a_fst a_snd : N) (st : owners_arr) : result_arr :=
+        let owners_arr' :=
+            List.map (fun o => if N.eqb o a_fst then a_snd else o) st in
+        Ok (owners_arr', []).
 
-    (* serialization *)
-    Section Serialization.
-        Global Instance entrypoint_serializable : Serializable entrypoint_arr := todo.
-        (* Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners,isOwner,getOwners>. *)
-        Global Instance storage_serializable : Serializable storage_arr := todo.
-    End Serialization.
+    (* contract definition *)
+    Definition init_arr (_ : Chain) (_ : ContractCallContext) (_ : setup) :
+        result owners_arr error := 
+        Ok empty_array.
 
-
-    (* init function definition *)
-    Definition init_arr (_ : Chain) (_ : ContractCallContext) (init_st : setup_arr) :
-        result storage_arr error := 
-        Ok (init_st).
-
-    (* receive function definition *)
-    Definition receive_arr (_ : Chain) (_ : ContractCallContext) (st : storage_arr) 
-        (msg : option entrypoint_arr) : result_arr :=
+    Definition receive_arr (_ : Chain) (_ : ContractCallContext)
+        (st : owners_arr)  (msg : option entrypoint) : result_arr :=
         match msg with 
-        | Some (addOwner x)    => add_owner_arr st x
-        | Some (removeOwner x) => remove_owner_arr st x
-        | Some (swapOwners x)  => swap_owners_arr st x
-        | Some (isOwner x)     => is_owner_arr st x
-        | Some (getOwners x)   => get_owners_arr st x
-        | None => Err 0
+        | Some (addOwner a) => add_owner_arr a st
+        | Some (removeOwner a) => remove_owner_arr a st
+        | Some (swapOwners a_fst a_snd)  => swap_owners_arr a_fst a_snd st
+        | None => Err error_NO_ENTRYPOINT
         end.
-
-    Definition C_arr : Contract setup_arr entrypoint_arr storage_arr error := 
+    
+    (* contract definition *)
+    Definition C_arr : Contract setup entrypoint owners_arr error :=
         build_contract init_arr receive_arr.
+
 End ContractUsingArray.
 
+(* the contract that uses linked lists, owners_ll *)
+Section ContractUsingLinkedList.
+    Section Aux.
+        Definition find_prev_a (a : N) (st : owners_ll) : N := todo.
+        Definition find_next_a (a : N) (st : owners_ll) : N := todo.
+    End Aux.
 
-(* Our implementation of a linked list with associated lemmas *)
-Definition SENTINEL_OWNERS : N := 0.
+    Definition result_ll := result (owners_ll * list ActionBody) error.
 
-(* a small library for linked lists *)
-Section LinkedList.
+    Definition add_owner_ll (a : N) (st : owners_ll) : result_ll :=
+        Ok (FMap.add SENTINEL_OWNERS a (FMap.add a (find_next_a a st) st), []).
+        (* match FMap.find SENTINEL_OWNERS st with
+        | None => Err error_LINK_NOT_FOUND
+        | Some a' => Ok (FMap.add SENTINEL_OWNERS a (FMap.add a a' st), [])
+        end. *)
 
-    Definition find_prev_owner (owner : N) (owners : FMap N N) : result N error :=
-        (* get the keys *)
-        let keys := FMap.keys owners in
-        (* find the previous owner *)
-        let prev_owner := List.fold_right (fun k acc => 
-            match (FMap.find k owners) with 
-            | Some o => if N.eqb o owner then k else acc
-            | None => acc
-            end) 0 keys in
-        (* check the result *)
-        if N.eqb prev_owner 0 then Err error_LINK_NOT_FOUND else
-        Ok prev_owner.
-
-    Definition has_prev_owner (owner : N) (owners : FMap N N) : bool := 
-        match find_prev_owner owner owners with 
-        | Ok _ => true
-        | Err _ => false
+    Definition remove_owner_ll (a : N) (st : owners_ll) : result_ll :=
+        match FMap.find a st with
+        | None => Ok (st, []) (* returns st if a not in *)
+        | Some a_next => (* otherwise, it finds the prev owner and updates *)
+            let a_prev := find_prev_a a st in
+            Ok (FMap.add a_prev a_next (FMap.remove a st), [])
         end.
 
-    Definition find_owner_result (owner : N) (owners : FMap N N) : result N error :=
-        match FMap.find owner owners with
-            | Some o => Ok o
-            | None => Err error_LINK_NOT_FOUND
+    Definition swap_owners_ll (a_fst a_snd : N) (st : owners_ll) : result_ll :=
+        match FMap.find a_fst st with 
+        | None => Ok (st, [])  (* returns st if a_fst not in *)
+        | Some a_next =>
+            let a_prev := find_prev_a a_fst st in
+            Ok (FMap.add a_prev a_snd (FMap.add a_snd a_next (FMap.remove a_fst st)), [])
         end.
 
-    Definition insert_ll (o : N) (accum : FMap N N) : result (FMap N N) error :=
-        (* check the owner isn't the sentinel *)
-        if N.eqb o SENTINEL_OWNERS then Err 0 else
-        (* no duplicates *)
-        if has_prev_owner o accum then Err 0 else
-        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-        do o' <- find_owner_result SENTINEL_OWNERS accum ;
-        let accum' := FMap.add o o' accum in 
-        (* owners[SENTINEL_OWNERS] = owner; *)
-        Ok (FMap.add SENTINEL_OWNERS o accum').
+    (* contract definition *)
+    Definition init_ll (_ : Chain) (_ : ContractCallContext) (_ : setup) :
+        result owners_ll error := 
+        Ok empty_linked_list.
 
-    Definition insert_ll_2 (o : N) (accum : FMap N N) : FMap N N :=
-        (* check the owner isn't the sentinel *)
-        if N.eqb (o + 1) SENTINEL_OWNERS then accum else
-        (* no duplicates *)
-        if has_prev_owner (o + 1) accum then accum else
-        (* owners[owner] = owners[SENTINEL_OWNERS]; *)
-        match FMap.find SENTINEL_OWNERS accum with | None => accum | Some o' =>
-        let accum' := FMap.add (o + 1) o' accum in 
-        (* owners[SENTINEL_OWNERS] = owner; *)
-        FMap.add SENTINEL_OWNERS (o + 1) accum' end.
-
-        (*
-            n_owner0 =
-                find_owner_null 0
-                (insert_ll_2 n_owner0 (insert_ll_2 a (FMap.add 0 0 empty_map)))
-        *)
-    
-End LinkedList.
-
-(* The optimized contract, which is correct (by definition) when it has the same
-    input-output behavior of the original contract C_array *)
-Section ContractUsingLinkedList. (* linked lists *)
-    (** SENTINEL_OWNERS is used to traverse `owners`, so that:
-            1. `owners[SENTINEL_OWNERS]` contains the first owner
-            2. `owners[last_owner]` points back to SENTINEL_OWNERS
-    *)
-
-    (** contract types aside from the entrypoint type *)
-    Record storage_ll := { owners_ll : FMap N N ; }. (* an array of event logs *)
-    (* Definition sentinel : N := 0. *)
-
-    Definition setup_ll := storage_ll.
-    Definition result_ll : Type := result (storage_ll * list ActionBody) error.
-
-    (* entrypoint functions *)
-    Record _add_owner_ll := { n_owner_ll : N }.
-    Definition add_owner_ll (st : storage_ll) (x : _add_owner_ll) : result_ll :=
-        let new_owner := n_owner_ll x in 
-        let owners := owners_ll st in
-        do owners_ll_new <- insert_ll new_owner owners;
-        Ok ({| owners_ll := owners_ll_new |}, []).
-
-    Record _remove_owner_ll := { r_owner_ll : N }.
-    Definition remove_owner_ll (st : storage_ll) (x : _remove_owner_ll) : result_ll :=
-        let owner := r_owner_ll x in 
-        let owners := owners_ll st in
-        do prev_owner <- find_prev_owner owner owners ;
-        do next_owner <- find_owner_result owner owners ;
-        (* check the owner isn't the sentinel (and not zero?) *)
-        if N.eqb owner SENTINEL_OWNERS then Err 0 else
-        if N.eqb owner 0 then Err 0 else
-        (* owners[prevOwner] = owners[owner]; *)
-        let owners_ll_new := FMap.add prev_owner next_owner owners in
-        (* owners[owner] = address(0); *)
-        let owners_ll_new := FMap.remove owner owners_ll_new in
-        Ok ({| owners_ll := owners_ll_new |}, []).
-
-    Record _swap_owners_ll := { owner_old_ll : N ; owner_new_ll : N }.
-    Definition find_result (owner : N) (owners : FMap N N) : result N error :=
-        match FMap.find owner owners with
-            | Some o => Ok o
-            | None => Err error_LINK_NOT_FOUND
-        end.
-    Definition swap_owners_ll (st : storage_ll) (x : _swap_owners_ll) : result_ll :=
-        let old_owner := owner_old_ll x in 
-        let new_owner := owner_new_ll x in 
-        let owners := owners_ll st in
-        (* owners[newOwner] = owners[oldOwner]; *)
-        do old_owner_res <- find_result old_owner owners ;
-        let owners_ll_new := FMap.add new_owner old_owner_res owners in
-        (* owners[prevOwner] = newOwner; *)
-        do prev_owner <- find_prev_owner old_owner owners ;
-        let owners_ll_new := FMap.add prev_owner new_owner owners_ll_new in
-        (* owners[oldOwner] = address(0); *)
-        let owners_ll_new := FMap.remove old_owner owners_ll_new in
-        Ok ({| owners_ll := owners_ll_new |}, []).
-
-    Record _is_owner_ll := { i_owner_ll : N ; ack_is_ll : Address }.
-    Definition is_owner_ll (st : storage_ll) (x : _is_owner_ll) : result_ll := 
-        (* check mapping is nonzero *)
-        todo.
-
-    Record _get_owners_ll := { ack_get_ll : Address }.
-    Definition get_owners_ll (st : storage_ll) (x : _get_owners_ll) : result_ll :=
-        (* make a list probably, return it to ack *)
-        todo.
-
-    Inductive entrypoint_ll :=
-        | addOwner_ll (x : _add_owner_ll)
-        | removeOwner_ll (x : _remove_owner_ll)
-        | swapOwners_ll (x : _swap_owners_ll)
-        | isOwner_ll (x : _is_owner_ll)
-        | getOwners_ll (x : _get_owners_ll).
-
-    (* serialization *)
-    Section Serialization.
-        Global Instance entrypoint_ll_serializable : Serializable entrypoint_ll := todo.
-        (* Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners,isOwner,getOwners>. *)
-        Global Instance storage_ll_serializable : Serializable storage_ll := todo.
-    End Serialization.
-
-    (* init function definition *)
-    Definition init_ll (_ : Chain) (_ : ContractCallContext) (init_st : setup_ll) :
-        result storage_ll error := 
-        Ok (init_st).
-
-    (* receive function definition *)
-    Definition receive_ll (_ : Chain) (_ : ContractCallContext) (st : storage_ll) 
-        (msg : option entrypoint_ll) : result_ll :=
+    Definition receive_ll (_ : Chain) (_ : ContractCallContext)
+        (st : owners_ll)  (msg : option entrypoint) : result_ll :=
         match msg with 
-        | Some (addOwner_ll x)    => add_owner_ll st x
-        | Some (removeOwner_ll x) => remove_owner_ll st x
-        | Some (swapOwners_ll x)  => swap_owners_ll st x
-        | Some (isOwner_ll x)     => is_owner_ll st x
-        | Some (getOwners_ll x)   => get_owners_ll st x
-        | None => Err 0
+        | Some (addOwner a) => add_owner_ll a st
+        | Some (removeOwner a) => remove_owner_ll a st
+        | Some (swapOwners a_fst a_snd)  => swap_owners_ll a_fst a_snd st
+        | None => Err error_NO_ENTRYPOINT
         end.
-
-    Definition C_ll : Contract setup_ll entrypoint_ll storage_ll error := 
+    
+    (* contract definition *)
+    Definition C_ll : Contract setup entrypoint owners_ll error :=
         build_contract init_ll receive_ll.
+
 End ContractUsingLinkedList.
 
-
-(* The formal specification *)
-Section Specification.
-
-(** First, a formal specification of the reference contract *)
-
-(* No duplicate owners *)
-(* 0 and sentinel (?) are never owners *)
-(* functional specifications of each *)
-    
-
-(** the isomorphism *)
 Section Isomorphism.
+    Section Aux.
+        
+        Fixpoint arr_to_ll_rec (st : owners_arr) (acc : owners_ll) : owners_ll :=
+            match st with
+            | [] => acc
+            | a :: st' =>
+                let a' := find_next_a SENTINEL_OWNERS acc in 
+                arr_to_ll_rec st' (FMap.add SENTINEL_OWNERS a (FMap.add a a' acc))
+                (* match FMap.find SENTINEL_OWNERS acc with 
+                | Some a' => arr_to_ll_rec st' (FMap.add a a' acc)
+                | None => acc (* unreachable state TODO *)
+                end *)
+            end.
 
-Section Aux.
-    Definition empty_map : FMap N N := FMap.empty.
-    Definition sentinal_init : FMap N N := FMap.add SENTINEL_OWNERS SENTINEL_OWNERS empty_map.
+        Definition arr_to_ll (st : owners_arr) : owners_ll := arr_to_ll_rec st empty_linked_list.
+            
 
-    Fixpoint has_duplicate (l : list N) : bool :=
-    match l with
-    | [] => false
-    | x :: xs => if existsb (N.eqb x) xs then true else has_duplicate xs
-    end.
+        Definition ll_to_arr (st : owners_ll) : owners_arr := todo.
 
-    Fixpoint array_to_linked_list_rec (l : list N) (accum : FMap N N) : result (FMap N N) error := 
-        match l with 
-        | [] => Ok accum
-        | a_hd :: a_tl => 
-            do accum' <- insert_ll a_hd accum ;
-            array_to_linked_list_rec a_tl accum'
-        end.
-
-    Fixpoint array_to_linked_list_rec2 (l : list N) (accum : FMap N N) : FMap N N := 
-        match l with 
-        | [] => accum
-        | a_hd :: a_tl => 
-            array_to_linked_list_rec2 a_tl (insert_ll_2 a_hd accum)
-        end.
-
-    Definition fixed_point_to_array (l : FMap N N) (accum : list N) : list N := 
-        let keys := FMap.keys l in
-        (* start with sentinel *)
-        (* iterate through the keys *)
-        (* decrease as you go *)
-        todo.
-
-    Definition find_owner_null (o : N) (owners : FMap N N) : N := 
-        match FMap.find o owners with | Some o' => o' | None => 0 end.    
-    Definition ll_pair_swap (res : result_ll) : result_ll := 
-        match res with 
-        | Ok (st, acts) =>
-            let owners := owners_ll st in 
-            let owner1 := find_owner_null SENTINEL_OWNERS owners in
-            let owner2 := find_owner_null owner1 owners in 
-            let owner3 := find_owner_null owner2 owners in
-            let owners' := FMap.add SENTINEL_OWNERS owner2 owners in 
-            let owners' := FMap.add owner2 owner1 owners' in 
-            let owners' := FMap.add owner1 owner3 owners' in 
-            Ok ({| owners_ll := owners' |}, acts)
-        | Err e => Err e
-        end.
-
-    Definition add_owner_ll_res (r : result_ll) (x : _add_owner_ll) : result_ll :=
-        match r with 
-        | Ok (st, acts) =>
-            let new_owner := n_owner_ll x in 
-            let owners := owners_ll st in
-            do owners_ll_new <- insert_ll new_owner owners;
-            Ok ({| owners_ll := owners_ll_new |}, acts)
-        | Err e => Err e 
-        end.
-End Aux.
-
-(** m : C_arr -> C_ll *)
-Definition msg_morph (e : entrypoint_arr) : entrypoint_ll := 
-    match e with
-    | addOwner x => addOwner_ll {| n_owner_ll := x.(n_owner) + 1 |}
-    | removeOwner x => removeOwner_ll {| r_owner_ll := x.(r_owner) |}
-    | swapOwners x => swapOwners_ll {| owner_old_ll := x.(owner_old_arr) ; owner_new_ll := x.(owner_new_arr) |}
-    | isOwner x => isOwner_ll {| i_owner_ll := x.(i_owner) ; ack_is_ll := x.(ack_is) |}
-    | getOwners x => getOwners_ll {| ack_get_ll := x.(ack_get) |}
-    end.
-
-Definition state_morph (st : storage_arr) : storage_ll :=
-    {| owners_ll :=
-        array_to_linked_list_rec2 st.(owners_arr) sentinal_init |}.
-
-Definition setup_morph := state_morph.
-Definition error_morph : error -> error := id.
-
-Lemma init_coherence : init_coherence_prop C_arr C_ll setup_morph state_morph error_morph.
-Proof. now unfold init_coherence_prop. Qed.
-
-Lemma pair_lem { A B : Type } : forall (a a' : A) (b b' : B),
-    a = a' /\ b = b' -> (a, b) = (a', b').
-Proof. intros. destruct H. now subst. Qed.
- 
-Lemma recv_coherence : recv_coherence_prop C_arr C_ll msg_morph state_morph error_morph.
-Proof.
-    unfold recv_coherence_prop.
-    intros.
-    simpl.
-    unfold result_functor, receive, receive'.
-    destruct op_msg; auto.
-    destruct e.
-    (* add_owner_arr -> add_owner_ll *)
-    -   simpl.
-        destruct st, x.
-        induction owners_arr0.
-        (* base case: owners_arr is empty *)
-        +   unfold add_owner_arr, state_morph. cbn.
-            assert (insert_ll (n_owner0 + 1) (FMap.add 0 SENTINEL_OWNERS empty_map)
-                = Ok (insert_ll_2 n_owner0 (FMap.add 0 SENTINEL_OWNERS empty_map)))
-            as H_insert.
-            {   unfold insert_ll, insert_ll_2.
-                assert ((n_owner0 + 1 =? SENTINEL_OWNERS)%N = false) as H_not_sentinel.
-                { unfold SENTINEL_OWNERS. now induction n_owner0. }
-                rewrite H_not_sentinel. clear H_not_sentinel.
-                replace (has_prev_owner (n_owner0 + 1) (FMap.add 0 SENTINEL_OWNERS empty_map))
-                with (false). (* no prev owner *)
-                2: { admit. } (* probably has to be proved elsewhere, assumed as an invariant *)
-                unfold find_owner_result.
-                assert (FMap.find SENTINEL_OWNERS (FMap.add 0 SENTINEL_OWNERS empty_map) = Some 0)
-                as H_sentinel_find.
-                {   now unfold SENTINEL_OWNERS. }
-                now rewrite H_sentinel_find. }
-            now rewrite H_insert.
-        (* inductive step: owners_arr is not empty *)
-        +   replace ({| n_owner_ll := n_owner {| n_owner := n_owner0 |} + 1 |}) 
-            with ({| n_owner_ll := n_owner0 + 1 |}) in *; auto.
-            assert (add_owner_ll (state_morph {| owners_arr := a :: owners_arr0 |})
-            {| n_owner_ll := n_owner0 + 1 |} = 
-            ll_pair_swap (add_owner_ll_res
-                (add_owner_ll (state_morph {| owners_arr := owners_arr0 |})
-                    {| n_owner_ll := n_owner0 + 1 |})
-                {| n_owner_ll := a |}))
-            as H_apply_induction.
-            {   clear IHowners_arr0.
-                unfold add_owner_ll_res, add_owner_ll, state_morph, ll_pair_swap,
-                    insert_ll, insert_ll_2, SENTINEL_OWNERS.
-                cbn.
-                assert ((n_owner0 + 1 =? 0)%N = false) as H_nzero.
-                {  now destruct n_owner0. }
-                rewrite H_nzero. clear H_nzero.
-                assert (has_prev_owner (n_owner0 + 1)
-                (array_to_linked_list_rec2 owners_arr0
-                   (insert_ll_2 a (FMap.add 0 SENTINEL_OWNERS empty_map))) = false)
-                as H_no_dup.
-                {   admit. } (* probably has to be proved elsewhere, assumed as an invariant *)
-                rewrite H_no_dup. clear H_no_dup.
-                assert (find_owner_result 0
-                (array_to_linked_list_rec2 owners_arr0
-                   (insert_ll_2 a (FMap.add 0 SENTINEL_OWNERS empty_map))) = Ok a)
-                as H_arr.
-                {   unfold array_to_linked_list_rec2, insert_ll_2.
-                    induction owners_arr0; cbn.
-                    -   admit. (* base case *)
-                    -   admit. (* inductive step *)
-                }
-                rewrite H_arr. clear H_arr.
-                assert (has_prev_owner (n_owner0 + 1)
-                  (array_to_linked_list_rec2 owners_arr0
-                     (FMap.add 0 SENTINEL_OWNERS empty_map)) = false) as H_no_dup.
-                { admit. } (* no duplicates *)
-                rewrite H_no_dup. clear H_no_dup.
-                
-                
-                admit. (* TODO unfold the computation .. add_owner_ll_res might be wrong*) }
-            rewrite H_apply_induction. clear H_apply_induction.
-            rewrite <- IHowners_arr0. clear IHowners_arr0.
-            assert (add_owner_arr {| owners_arr := owners_arr0 |}
-                {| n_owner := n_owner0 |} = Ok ({| owners_arr := n_owner0 :: owners_arr0 |}, []))
-                as H_add_o.
-            {   unfold add_owner_arr. cbn. }
-            rewrite H_add_o. clear H_add_o.
-            assert (add_owner_arr {| owners_arr := a :: owners_arr0 |}
-            {| n_owner := n_owner0 |} = Ok ({| owners_arr := n_owner0 :: a :: owners_arr0 |}, []))
-            as H_add_o.
-            {   unfold add_owner_arr. cbn. }
-            rewrite H_add_o. clear H_add_o.
-            assert ((add_owner_ll_res
-            (Ok (state_morph {| owners_arr := n_owner0 :: owners_arr0 |}, []))
-            {| n_owner_ll := a |}) = 
-            Ok (state_morph {| owners_arr := a :: n_owner0 :: owners_arr0 |}, []))
-            as H_add_o.
-            {   unfold add_owner_ll_res. cbn. }
-            rewrite H_add_o. clear H_add_o.
-            unfold state_morph.
-            unfold owners_arr.
-            destruct owners_arr0.
-            *   (* if swap is implemented right this will work by just simplifying *)
-                unfold ll_pair_swap, array_to_linked_list_rec2, sentinal_init.
-                cbn.
-                apply f_equal.
-                apply pair_lem.
-                split; auto.
-                apply f_equal.
-                unfold SENTINEL_OWNERS.
-                replace ((find_owner_null 0
-                (insert_ll_2 n_owner0 (insert_ll_2 a (FMap.add 0 0 empty_map)))))
-                with (n_owner0).
-                2 : { admit. }
-                
-                
-
-                admit.
-            *   (* now you have three to work with *)
-                admit.
-    (* remove_owner_arr -> remove_owner_ll *)
-    -   cbn.
-        admit.
-    (* swap_owners_arr -> swap_owners_ll *)
-    -   cbn.
-        admit.
-    (* is_owner_arr -> is_owner_ll *)
-    -   cbn. admit.
-    (* get_owners_arr -> get_owners_ll *)
-    -   cbn. admit.
-Admitted.
+        (* some coherence lemmas *)
 
 
-Definition f_arr_ll : ContractMorphism C_arr C_ll := 
-    build_contract_morphism C_arr C_ll setup_morph msg_morph state_morph error_morph 
-        init_coherence recv_coherence.
+    End Aux.
 
-(** the inverse isomorphism *)
+    (* msg, setup, and error morphisms are all identity *)
+    Definition msg_morph : entrypoint -> entrypoint := id.
+    Definition setup_morph : setup -> setup := id.
+    Definition error_morph : error -> error := id.
 
-Definition msg_morph' (e : entrypoint_ll) : entrypoint_arr := 
-    match e with
-    | addOwner_ll x => addOwner {| n_owner := x.(n_owner_ll) - 1 |}
-    | removeOwner_ll x => removeOwner {| r_owner := x.(r_owner_ll) |}
-    | swapOwners_ll x => swapOwners {| owner_old_arr := x.(owner_old_ll) ; owner_new_arr := x.(owner_new_ll) |}
-    | isOwner_ll x => isOwner {| i_owner := x.(i_owner_ll) ; ack_is := x.(ack_is_ll) |}
-    | getOwners_ll x => getOwners {| ack_get := x.(ack_get_ll) |}
-    end.
+    (* storage morphisms *)
+    Definition state_morph : owners_arr -> owners_ll := arr_to_ll.
+    Definition state_morph_inv : owners_ll -> owners_arr := ll_to_arr.
 
-Definition state_morph' (st : storage_ll) : storage_arr :=
-    {| owners_arr :=
-        fixed_point_to_array st.(owners_ll) [] |}.
+    Section Lemmata.
+        (* some coherence lemmas for init *)
+        Lemma empty_coh : state_morph empty_array = empty_linked_list.
+        Admitted.
+        
+        Lemma empty_coh_rev : state_morph_inv empty_linked_list = empty_array.
+        Admitted.
 
-Definition setup_morph' := state_morph'.
+        (* some coherence lemmas for recv *)
+        Lemma add_owner_coh : forall a st st' acts,
+            add_owner_arr a st = Ok (st', acts) ->
+            add_owner_ll a (state_morph st) = Ok (state_morph st', acts).
+        Admitted.
 
-Definition error_morph' : error -> error := id.
+        Lemma add_owner_coh' : forall a st e,
+            add_owner_arr a st = Err e ->
+            add_owner_ll a (state_morph st) = Err e.
+        Admitted.
 
-Lemma init_coherence' : init_coherence_prop C_ll C_arr setup_morph' state_morph' error_morph.
-Proof. now unfold init_coherence_prop. Qed.
+        Lemma remove_owner_coh : forall a st st' acts,
+            remove_owner_arr a st = Ok (st', acts) ->
+            remove_owner_ll a (state_morph st) = Ok (state_morph st', acts).
+        Admitted.
 
-Lemma recv_coherence' : recv_coherence_prop C_ll C_arr msg_morph' state_morph' error_morph.
-Proof.
-    unfold recv_coherence_prop.
-    intros.
-    simpl.
-    unfold result_functor, receive, receive'.
-    destruct op_msg; auto.
-    destruct e.
-    (* add_owner_ll -> add_owner_arr *)
-    -   cbn.
-        admit.
-    (* remove_owner_ll -> remove_owner_arr *)
-    -   cbn.
-        admit.
-    (* swap_owners_ll -> swap_owners_arr *)
-    -   cbn.
-        admit.
-    (* is_owner_ll -> is_owner_arr *)
-    -   cbn.
-        admit.
-    (* get_owners_ll -> get_owners_arr *)
-    -   cbn.
-        admit.
-Admitted.
+        Lemma remove_owner_coh' : forall a st e,
+            remove_owner_arr a st = Err e ->
+            remove_owner_ll a (state_morph st) = Err e.
+        Admitted.
 
-Definition f_ll_arr : ContractMorphism C_ll C_arr := 
-    build_contract_morphism C_ll C_arr setup_morph' msg_morph' state_morph' error_morph 
-        init_coherence' recv_coherence'.
+        Lemma swap_owners_coh : forall a_fst a_snd st st' acts,
+            swap_owners_arr a_fst a_snd st = Ok (st', acts) ->
+            swap_owners_ll a_fst a_snd (state_morph st) = Ok (state_morph st', acts).
+        Admitted.
+
+        Lemma swap_owners_coh' : forall a_fst a_snd st e,
+            swap_owners_arr a_fst a_snd st = Err e ->
+            swap_owners_ll a_fst a_snd (state_morph st) = Err e.
+        Admitted.
+
+        Lemma add_owner_coh_inv : forall a st st' acts,
+            add_owner_ll a st = Ok (st', acts) ->
+            add_owner_arr a (state_morph_inv st) = Ok (state_morph_inv st', acts).
+        Admitted.
+
+        Lemma add_owner_coh'_inv : forall a st e,
+            add_owner_ll a st = Err e ->
+            add_owner_arr a (state_morph_inv st) = Err e.
+        Admitted.
+
+        Lemma remove_owner_coh_inv : forall a st st' acts,
+            remove_owner_ll a st = Ok (st', acts) ->
+            remove_owner_arr a (state_morph_inv st) = Ok (state_morph_inv st', acts).
+        Admitted.
+
+        Lemma remove_owner_coh'_inv : forall a st e,
+            remove_owner_ll a st = Err e ->
+            remove_owner_arr a (state_morph_inv st) = Err e.
+        Admitted.
+
+        Lemma swap_owners_coh_inv : forall a_fst a_snd st st' acts,
+            swap_owners_ll a_fst a_snd st = Ok (st', acts) ->
+            swap_owners_arr a_fst a_snd (state_morph_inv st) = Ok (state_morph_inv st', acts).
+        Admitted.
+
+        Lemma swap_owners_coh'_inv : forall a_fst a_snd st e,
+            swap_owners_ll a_fst a_snd st = Err e ->
+            swap_owners_arr a_fst a_snd (state_morph_inv st) = Err e.
+        Admitted.
+
+        (*  *)
+        Lemma state_morph_iso : forall st, state_morph (state_morph_inv st) = st.
+        Admitted.
+
+        Lemma state_morph_iso_inv : forall st, state_morph_inv (state_morph st) = st.
+        Admitted.
+
+    End Lemmata.
+
+    (*  *)
+    Lemma init_coherence : init_coherence_prop C_arr C_ll setup_morph state_morph error_morph.
+    Proof. now unfold init_coherence_prop, result_functor. Qed.
+
+    Lemma recv_coherence : recv_coherence_prop C_arr C_ll msg_morph state_morph error_morph.
+    Proof.
+        unfold recv_coherence_prop.
+        intros.
+        simpl.
+        unfold result_functor, receive_arr, receive_ll.
+        destruct op_msg; auto.
+        destruct e.
+        -   destruct (add_owner_arr a st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply add_owner_coh in H_res.
+            +   now apply add_owner_coh' in H_res.
+        -   destruct (remove_owner_arr a st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply remove_owner_coh in H_res.
+            +   now apply remove_owner_coh' in H_res.
+        -   destruct (swap_owners_arr a_fst a_snd st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply swap_owners_coh in H_res.
+            +   now apply swap_owners_coh' in H_res.
+    Qed.
+
+    (* the contract morphism f : C_arr -> C_ll *)
+    Definition f : ContractMorphism C_arr C_ll :=
+        build_contract_morphism C_arr C_ll
+            setup_morph msg_morph state_morph error_morph init_coherence recv_coherence.
 
 
-(* the isomorphism *)
-Theorem iso_ll_arr : is_iso_cm f_arr_ll f_ll_arr.
-Proof.
-    unfold is_iso_cm.
-    split.
-    (* compose_cm f_ll_arr f_arr_ll *)
-    -   apply eq_cm.
-        +   simpl.
-            apply functional_extensionality.
-            intros.
-            simpl.
-            destruct x.
-            unfold setup_morph, state_morph, setup_morph', state_morph'.
-            cbn.
-            induction owners_arr0; simpl.
-            (* add_owner_ll *)
-            --  admit.
-            --  admit.
-        +   admit.
-        +   admit.
-        +   admit.
-    (* compose_cm f_arr_ll f_ll_arr *)
-    -   apply eq_cm.
-        +   admit.
-        +   admit.
-        +   admit.
-        +   admit.
-Admitted.
+    (*  *)
+    Lemma init_coherence_inv : init_coherence_prop C_ll C_arr
+        setup_morph state_morph_inv error_morph.
+    Proof.
+        unfold init_coherence_prop, result_functor.
+        intros.
+        simpl.
+        unfold init_arr.
+        now rewrite empty_coh_rev.
+    Qed.
 
-Theorem iso_arr_all : is_iso_cm f_ll_arr f_arr_ll.
-Proof.
-    apply iso_cm_symmetric.
-    apply iso_ll_arr.
-Qed.
+    Lemma recv_coherence_inv : recv_coherence_prop C_ll C_arr
+        msg_morph state_morph_inv error_morph.
+    Proof.
+        unfold recv_coherence_prop.
+        intros.
+        simpl.
+        unfold result_functor, receive_ll, receive_arr.
+        destruct op_msg; auto.
+        destruct e.
+        -   destruct (add_owner_ll a st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply add_owner_coh_inv in H_res.
+            +   now apply add_owner_coh'_inv in H_res.
+        -   destruct (remove_owner_ll a st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply remove_owner_coh_inv in H_res.
+            +   now apply remove_owner_coh'_inv in H_res.
+        -   destruct (swap_owners_ll a_fst a_snd st) eqn:H_res.
+            +   destruct t as [st' acts].
+                now apply swap_owners_coh_inv in H_res.
+            +   now apply swap_owners_coh'_inv in H_res.
+    Qed.
+
+    (* the contract morphism f_inv : C_ll -> C_arr *)
+    Definition f_inv : ContractMorphism C_ll C_arr :=
+        build_contract_morphism C_ll C_arr
+            setup_morph msg_morph state_morph_inv error_morph
+            init_coherence_inv recv_coherence_inv.
+
+
+    (* f and f_inv are indeed inverses *)
+    Theorem iso_ll_arr : is_iso_cm f f_inv.
+    Proof.
+        unfold is_iso_cm.
+        split;
+        apply eq_cm; cbn;
+        apply functional_extensionality;
+        intros;
+        unfold Basics.compose;
+        auto.
+        -   now rewrite state_morph_iso_inv.
+        -   now rewrite state_morph_iso.
+    Qed.
+
+    Theorem iso_arr_all : is_iso_cm f_inv f.
+    Proof. apply iso_cm_symmetric. apply iso_ll_arr. Qed.
+
+    Theorem contracts_isomorphic : contracts_isomorphic C_arr C_ll.
+    Proof. exists f, f_inv. apply iso_ll_arr. Qed.
 
 End Isomorphism.
-
-(** porting the specification over the isomorphism *)
-Section Porting.
-
-(* the specification of the reference contract *)
-
-End Porting.
-
-End Specification.
 
 End ContractOptimization.
