@@ -260,55 +260,61 @@ Section Isomorphism.
 
 
         (* some coherence lemmas *)
-        Lemma arr_to_ll_rev : forall st, ll_to_arr (arr_to_ll st) = st.
-        Admitted.
+        Axiom arr_to_ll_rev : forall st, ll_to_arr (arr_to_ll st) = st.
 
-        Lemma ll_to_arr_rev : forall st,
-            cstate_reachable C_ll st ->
+        Axiom ll_to_arr_rev : forall st, cstate_reachable C_ll st ->
             arr_to_ll (ll_to_arr st) = st.
-        Admitted.
-
-        Lemma arr_to_ll_insert : forall a st,
-            ll_insert a (arr_to_ll st) = arr_to_ll (a :: st).
-        Admitted.
-
-        Lemma arr_to_ll_insert_inv : forall a st,
-            a :: ll_to_arr st = ll_to_arr (ll_insert a st).
-        Admitted.
-
-        Lemma arr_to_ll_remove : forall a st,
+        
+        Axiom arr_to_ll_insert : forall a st,
+            ll_insert a (arr_to_ll st) = arr_to_ll (a :: st). (* could prove probably *)
+        
+        Axiom arr_to_ll_insert_inv : forall a st,
+            a :: ll_to_arr st = ll_to_arr (ll_insert a st).  (* could prove probably *)
+        
+        Axiom arr_to_ll_remove : forall a st,
             ll_remove a (arr_to_ll st) = 
             Ok (arr_to_ll (List.remove N.eq_dec a st)).
-        Admitted.
 
-        Lemma ll_remove_lem : forall a st, 
+        Axiom ll_remove_lem : forall a st, 
             exists x, ll_remove a st = Ok x.
-        Proof.
-            intros.
-            destruct (ll_remove a st) eqn:H_remove.
-            -   unfold ll_remove in H_remove.
-                destruct (FMap.find a st) eqn:H_found; simpl in *.
-                +   destruct (find_prev_a a st).
-                    *   now exists (FMap.add t0 n (FMap.remove a st)).
-                    *   inversion H_remove.
-                +   now exists st.
-            -   unfold ll_remove in H_remove.
-                destruct (FMap.find a st) eqn:H_found; simpl in *.
-                +   destruct (find_prev_a a st).
-                    *   inversion H_remove.
-                    *   admit.
-                +   inversion H_remove.
+
+        Lemma ll_remove_failure : forall a st e,
+            remove_owner_ll a st = Err e -> False.
         Admitted.
 
-        Lemma arr_to_ll_swap : forall a_prev a_snd a_fst n st,
+        Lemma ll_swap_failure : forall a_fst a_snd st e, 
+            swap_owners_ll a_fst a_snd st = Err e -> False.
+        Admitted.
+
+        Lemma ll_remove_coh_lem : forall a a_prev a_next st,
+            FMap.find a st = Some a_next ->
+            find_prev_a a st = Ok a_prev ->
+            remove N.eq_dec a (ll_to_arr st) =
+            ll_to_arr (FMap.add a_prev a_next (FMap.remove a st)).
+        Admitted.
+
+        Lemma remove_not_found : forall a st,
+            FMap.find a st = None -> 
+            remove N.eq_dec a (ll_to_arr st) = ll_to_arr st.
+        Admitted.
+
+        Axiom arr_to_ll_swap : forall a_prev a_snd a_fst n st,
             FMap.add a_prev a_snd (FMap.add a_snd n (FMap.remove a_fst (arr_to_ll st))) =
             arr_to_ll (map (fun o : N => if (o =? a_fst)%N then a_snd else o) st).
+
+        Lemma ll_to_arr_swap : forall a_fst a_snd a_prev a_next st,
+            FMap.find a_fst st = Some a_next ->
+            map (fun o : N => if (o =? a_fst)%N then a_snd else o) (ll_to_arr st) =
+            ll_to_arr (FMap.add a_prev a_snd (FMap.add a_snd a_next (FMap.remove a_fst st))).
         Admitted.
 
-        Lemma ll_fst_found_snd_found : forall a_fst st n,
+        Axiom ll_fst_found_snd_found : forall a_fst st n,
             FMap.find a_fst (arr_to_ll st) = Some n -> 
             exists t, find_prev_a a_fst (arr_to_ll st) = Ok t.
-        Admitted.
+
+        Axiom ll_fst_found_snd_found' : forall a_fst st n, 
+            FMap.find a_fst st = Some n -> 
+            exists t, find_prev_a a_fst st = Ok t.
 
         (* TODO split into an invariant *)
         Theorem arr_to_ll_no_duplicates : forall a st st' acts,
@@ -337,6 +343,12 @@ Section Isomorphism.
             st = st'.
         Admitted.
 
+        Lemma swap_idempotent' : forall a_fst a_snd st,
+            FMap.find a_fst st = None ->
+            (map (fun o : N => if (o =? a_fst)%N then a_snd else o) (ll_to_arr st)) = 
+            (ll_to_arr st).
+        Admitted.
+
         Lemma add_owner_ll_no_acts : forall a st st' acts,
             add_owner_ll a st = Ok (st', acts) -> acts = [].
         Proof.
@@ -354,6 +366,18 @@ Section Isomorphism.
             destruct (FMap.find a_fst st) in H_swap; try inversion H_swap; auto.
             destruct (find_prev_a a_fst st) in H0; now try inversion H0.
         Qed.
+
+        Lemma empty_arr_transform : ll_to_arr (arr_to_ll []) = []. Admitted.
+
+        Lemma arr_transform_inductive : forall a st, 
+            ll_to_arr (arr_to_ll (a :: st)) = 
+            a :: (ll_to_arr (arr_to_ll st)).
+        Admitted.
+
+        (* TODO there are some assumed invariants/conditions *)
+        Lemma ll_transform_inverse : forall st,
+            arr_to_ll (ll_to_arr st) = st.
+        Admitted.
 
     End Aux.
 
@@ -538,30 +562,93 @@ Section Isomorphism.
         Lemma remove_owner_coh_inv : forall a st st' acts,
             remove_owner_ll a st = Ok (st', acts) ->
             remove_owner_arr a (state_morph_inv st) = Ok (state_morph_inv st', acts).
-        Admitted.
+        Proof.
+            intros * H_remove.
+            unfold remove_owner_ll, remove_owner_arr, state_morph_inv in *.
+            simpl in *.
+            destruct (ll_remove a st) eqn:H_remove_eq in H_remove; try inversion H_remove.
+            f_equal.
+            apply pair_lem. split; auto.
+            unfold ll_remove in H_remove_eq.
+            clear H1 H_remove.
+            rewrite H0 in *.
+            clear H0.
+            destruct (FMap.find a st) eqn:H_a_in_st.
+            (* a is in st *)
+            -   rename n into a_next.
+                simpl in *.
+                pose proof (ll_fst_found_snd_found' a st a_next H_a_in_st) as H_found_prev.
+                destruct H_found_prev as [a_prev H_found_prev].
+                rewrite H_found_prev in H_remove_eq.
+                inversion H_remove_eq as [H_remove_eq'].
+                clear H_remove_eq. rename H_remove_eq' into H_remove_eq.
+                now apply ll_remove_coh_lem.
+            (* a is not in st *)
+            -   inversion H_remove_eq as [H_remove_eq']. clear H_remove_eq.
+                rewrite <- H_remove_eq'.
+                now apply remove_not_found.
+        Qed.
 
         Lemma remove_owner_coh'_inv : forall a st e,
             remove_owner_ll a st = Err e ->
             remove_owner_arr a (state_morph_inv st) = Err e.
-        Admitted.
+        Proof.
+            intros * H_remove.
+            now apply ll_remove_failure in H_remove.
+        Qed.
 
         Lemma swap_owners_coh_inv : forall a_fst a_snd st st' acts,
             swap_owners_ll a_fst a_snd st = Ok (st', acts) ->
             swap_owners_arr a_fst a_snd (state_morph_inv st) = Ok (state_morph_inv st', acts).
-        Admitted.
+        Proof.
+            intros * H_swap.
+            unfold swap_owners_ll, swap_owners_arr, state_morph_inv in *.
+            destruct (FMap.find a_fst st) eqn:H_found.
+            rename n into a_next.
+            (* a_fst is owner *)
+            -   simpl in *.
+                apply ll_fst_found_snd_found' in H_found as H_found'.
+                destruct H_found' as [a_prev H_found'].
+                rewrite H_found' in H_swap.
+                inversion H_swap.
+                clear H0 H1.
+                f_equal. apply pair_lem. split; auto.
+                now apply ll_to_arr_swap.
+            (* a_fst is not owner *)
+            -   inversion H_swap.
+                rewrite <- H0.
+                clear H0 H1 H_swap.
+                now rewrite swap_idempotent'.
+        Qed.
 
         Lemma swap_owners_coh'_inv : forall a_fst a_snd st e,
             swap_owners_ll a_fst a_snd st = Err e ->
             swap_owners_arr a_fst a_snd (state_morph_inv st) = Err e.
-        Admitted.
+        Proof.
+            intros * H_swap.
+            now apply ll_swap_failure in H_swap.
+        Qed.
 
-        (*  *)
+        (* this is true under invariants *)
         Lemma state_morph_iso : forall st, state_morph (state_morph_inv st) = st.
-        Admitted.
+        Proof.
+            intro.
+            unfold state_morph, state_morph_inv.
+            apply ll_transform_inverse.
+        Qed.
 
         (* this is true under invariants *)
         Lemma state_morph_iso_inv : forall st, state_morph_inv (state_morph st) = st.
-        Admitted.
+        Proof.
+            intro.
+            unfold state_morph, state_morph_inv.
+            induction st.
+            (* base case *)
+            -   apply empty_arr_transform.
+            (* inductive step *)
+            -   rewrite arr_transform_inductive.
+                now rewrite IHst.
+        Qed.
 
     End Lemmata.
 
