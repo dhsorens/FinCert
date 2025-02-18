@@ -750,19 +750,77 @@ End Isomorphism.
 
 Section Specification.
 
+    Axiom nodup_empty : NoDup empty_array.
+
+    Lemma nodup_add : forall a prev_state new_state new_acts,
+        add_owner_arr a prev_state = Ok (new_state, new_acts) ->
+        NoDup prev_state -> NoDup new_state.
+    Admitted.
+
+    Lemma nodup_remove : forall a prev_state new_state new_acts,
+        remove_owner_arr a prev_state = Ok (new_state, new_acts) ->
+        NoDup prev_state -> NoDup new_state.
+    Admitted.
+
+    Lemma nodup_swap : forall a_fst a_snd prev_state new_state new_acts,
+        swap_owners_arr a_fst a_snd prev_state = Ok (new_state, new_acts) ->
+        NoDup prev_state -> NoDup new_state.
+    Admitted.
+
     Definition no_duplciates_arr (st : owners_arr) : Prop := NoDup st.
 
     Definition no_duplciates_ll (st : owners_ll) : Prop :=
         todo. (* you can cycle through the list and return to SENTINEL *)
 
     (* proved by contract induction *)
-    Theorem no_duplciates (cstate : owners_arr) :
-        cstate_reachable C_arr cstate -> no_duplciates_arr cstate.
-    Admitted.
+    Theorem no_duplciates (cstate : owners_arr) bstate caddr :
+        reachable bstate -> 
+        env_contracts bstate caddr = Some (C_arr : WeakContract) ->
+        (* *)
+        exists (cstate : owners_arr), contract_state bstate caddr = Some cstate /\
+        (* *)
+        no_duplciates_arr cstate.
+    Proof.
+        intros reachable_st contract_at_caddr.
+        unfold no_duplciates_arr in *.
+        contract_induction; auto; intros.
+        (* Please establish the invariant after deployment of the contract *)
+        -   simpl in init_some.
+            unfold init_arr in init_some.
+            inversion init_some.
+            now apply nodup_empty.
+        (* Please reestablish the invariant after a nonrecursive call *)
+        -   simpl in receive_some.
+            unfold receive_arr in receive_some.
+            destruct msg; try inversion receive_some.
+            destruct e eqn:H_msg.
+            (* addOwner *)
+            +   now apply (nodup_add a prev_state new_state new_acts).
+            (* removeOwner *)
+            +   now apply (nodup_remove a prev_state new_state new_acts).
+            (* swapOwners *)
+            +   now apply (nodup_swap a_fst a_snd prev_state new_state new_acts).
+        (* Please reestablish the invariant after a recursive call *)
+        -   simpl in receive_some.
+            unfold receive_arr in receive_some.
+            destruct msg; try inversion receive_some.
+            destruct e eqn:H_msg.
+            (* addOwner *)
+            +   now apply (nodup_add a prev_state new_state new_acts).
+            (* removeOwner *)
+            +   now apply (nodup_remove a prev_state new_state new_acts).
+            (* swapOwners *)
+            +   now apply (nodup_swap a_fst a_snd prev_state new_state new_acts).
+        (* Please prove your facts *)
+        -   solve_facts.
+    Qed.
 
     (* proved by morphism induction *)
     Theorem no_duplciates' (cstate : owners_ll) : 
         cstate_reachable C_ll cstate -> no_duplciates_ll cstate.
+    Proof.
+        intros.
+        (* left_cm_induction *)
     Admitted.
 
 End Specification.
