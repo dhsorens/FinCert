@@ -77,6 +77,7 @@ Section ContractUsingArray.
         Ok (List.remove N.eq_dec a st, []).
 
     Definition swap_owners_arr (a_fst a_snd : N) (st : owners_arr) : result_arr :=
+        if in_dec N.eq_dec a_snd st then Ok (st, []) else
         let owners_arr' :=
             List.map (fun o => if N.eqb o a_fst then a_snd else o) st in
         Ok (owners_arr', []).
@@ -114,16 +115,21 @@ Section ContractUsingArray.
         Proof.
             intros * H_swap.
             unfold swap_owners_arr in H_swap.
-            inversion H_swap as [[H_swap0 H_swap1]].
-            now subst.
+            destruct (in_dec N.eq_dec a_snd st) in H_swap;
+            now inversion H_swap.
         Qed.
 
         Lemma swap_always_succeeds : forall a_fst a_snd st,
             exists st', swap_owners_arr a_fst a_snd st = Ok (st', []).
         Proof.
             intros.
-            exists (List.map (fun o => if N.eqb o a_fst then a_snd else o) st).
-            now simpl.
+            destruct (in_dec N.eq_dec a_snd st) eqn:H_snd_in.
+            -   exists st.
+                unfold swap_owners_arr.
+                now rewrite H_snd_in.
+            -   exists (List.map (fun o => if N.eqb o a_fst then a_snd else o) st).
+                unfold swap_owners_arr.
+                now rewrite H_snd_in.
         Qed.
         
     End Aux.
@@ -182,8 +188,6 @@ Section ContractUsingLinkedList.
 
         Definition ll_is_in (a : N) (st : owners_ll) : bool := 
             match FMap.find a st with | None => false | Some _ => true end.
-        
-        
 
         (* takes a linked list and removes the first element, if there is one *)
         Definition ll_decrement (st : owners_ll) : owners_ll := todo.
@@ -199,11 +203,13 @@ Section ContractUsingLinkedList.
         Ok (st', []).
 
     Definition swap_owners_ll (a_fst a_snd : N) (st : owners_ll) : result_ll :=
-        match FMap.find a_fst st with 
-        | None => Ok (st, [])  (* returns st if a_fst not in *)
-        | Some a_next =>
-            do a_prev <- find_prev_a a_fst st;
-            Ok (FMap.add a_prev a_snd (FMap.add a_snd a_next (FMap.remove a_fst st)), [])
+        match FMap.find a_snd st with | Some _ => Ok (st, []) | None => 
+            match FMap.find a_fst st with 
+            | None => Ok (st, [])  (* returns st if a_fst not in *)
+            | Some a_next =>
+                do a_prev <- find_prev_a a_fst st;
+                Ok (FMap.add a_prev a_snd (FMap.add a_snd a_next (FMap.remove a_fst st)), [])
+            end
         end.
 
     (* contract definition *)
@@ -260,23 +266,29 @@ Section Isomorphism.
 
 
         (* some coherence lemmas *)
-        Axiom arr_to_ll_rev : forall st, ll_to_arr (arr_to_ll st) = st.
+        Lemma arr_to_ll_rev : forall st, ll_to_arr (arr_to_ll st) = st.
+        Admitted.
 
-        Axiom ll_to_arr_rev : forall st, cstate_reachable C_ll st ->
+        Lemma ll_to_arr_rev : forall st, cstate_reachable C_ll st ->
             arr_to_ll (ll_to_arr st) = st.
+        Admitted.
         
-        Axiom arr_to_ll_insert : forall a st,
+        Lemma arr_to_ll_insert : forall a st,
             ll_insert a (arr_to_ll st) = arr_to_ll (a :: st). (* could prove probably *)
+        Admitted.
         
-        Axiom arr_to_ll_insert_inv : forall a st,
+        Lemma arr_to_ll_insert_inv : forall a st,
             a :: ll_to_arr st = ll_to_arr (ll_insert a st).  (* could prove probably *)
+        Admitted.
         
-        Axiom arr_to_ll_remove : forall a st,
+        Lemma arr_to_ll_remove : forall a st,
             ll_remove a (arr_to_ll st) = 
             Ok (arr_to_ll (List.remove N.eq_dec a st)).
+        Admitted.
 
-        Axiom ll_remove_lem : forall a st, 
+        Lemma ll_remove_lem : forall a st, 
             exists x, ll_remove a st = Ok x.
+        Admitted.
 
         Lemma ll_remove_failure : forall a st e,
             remove_owner_ll a st = Err e -> False.
@@ -298,9 +310,10 @@ Section Isomorphism.
             remove N.eq_dec a (ll_to_arr st) = ll_to_arr st.
         Admitted.
 
-        Axiom arr_to_ll_swap : forall a_prev a_snd a_fst n st,
+        Lemma arr_to_ll_swap : forall a_prev a_snd a_fst n st,
             FMap.add a_prev a_snd (FMap.add a_snd n (FMap.remove a_fst (arr_to_ll st))) =
             arr_to_ll (map (fun o : N => if (o =? a_fst)%N then a_snd else o) st).
+        Admitted.
 
         Lemma ll_to_arr_swap : forall a_fst a_snd a_prev a_next st,
             FMap.find a_fst st = Some a_next ->
@@ -308,13 +321,15 @@ Section Isomorphism.
             ll_to_arr (FMap.add a_prev a_snd (FMap.add a_snd a_next (FMap.remove a_fst st))).
         Admitted.
 
-        Axiom ll_fst_found_snd_found : forall a_fst st n,
+        Lemma ll_fst_found_snd_found : forall a_fst st n,
             FMap.find a_fst (arr_to_ll st) = Some n -> 
             exists t, find_prev_a a_fst (arr_to_ll st) = Ok t.
+        Admitted.
 
-        Axiom ll_fst_found_snd_found' : forall a_fst st n, 
+        Lemma ll_fst_found_snd_found' : forall a_fst st n, 
             FMap.find a_fst st = Some n -> 
             exists t, find_prev_a a_fst st = Ok t.
+        Admitted.
 
         (* TODO split into an invariant *)
         Theorem arr_to_ll_no_duplicates : forall a st st' acts,
@@ -337,10 +352,9 @@ Section Isomorphism.
             (FMap.find a st <> None).
         Admitted.
 
-        Lemma swap_idempotent : forall a_fst a_snd st st' acts,
-            swap_owners_arr a_fst a_snd st = Ok (st', acts) ->
+        Lemma swap_idempotent : forall a_fst a_snd st,
             FMap.find a_fst (arr_to_ll st) = None ->
-            st = st'.
+            (map (fun o : N => if (o =? a_fst)%N then a_snd else o) st) = st.
         Admitted.
 
         Lemma swap_idempotent' : forall a_fst a_snd st,
@@ -363,6 +377,7 @@ Section Isomorphism.
         Proof.
             intros * H_swap.
             unfold swap_owners_ll in H_swap.
+            destruct (FMap.find a_snd st) in H_swap; try now inversion H_swap.
             destruct (FMap.find a_fst st) in H_swap; try inversion H_swap; auto.
             destruct (find_prev_a a_fst st) in H0; now try inversion H0.
         Qed.
@@ -377,6 +392,26 @@ Section Isomorphism.
         (* TODO there are some assumed invariants/conditions *)
         Lemma ll_transform_inverse : forall st,
             arr_to_ll (ll_to_arr st) = st.
+        Admitted.
+
+        Lemma nodup_state_morph_some'_aux : forall a_snd st n,
+            FMap.find a_snd st = Some n -> 
+            In a_snd (ll_to_arr st).
+        Admitted.
+
+        Lemma nodup_state_morph_none'_aux : forall a_snd st,
+            FMap.find a_snd st = None -> 
+            ~ In a_snd (ll_to_arr st).
+        Admitted.
+
+        Lemma nodup_state_morph_some_aux : forall a_snd st,
+            In a_snd st -> 
+            exists x, FMap.find a_snd (arr_to_ll st) = Some x.
+        Admitted.
+
+        Lemma nodup_state_morph_none_aux : forall a_snd st,
+            ~ In a_snd st -> 
+            FMap.find a_snd (arr_to_ll st) = None.
         Admitted.
 
     End Aux.
@@ -484,33 +519,56 @@ Section Isomorphism.
             -   now inversion H_remove.
         Qed.
 
+        Lemma nodup_state_morph_some : forall st a_snd i, 
+            in_dec N.eq_dec a_snd st = left i -> 
+            exists x, FMap.find a_snd (arr_to_ll st) = Some x.
+        Proof.
+            intros * H_dup.
+            destruct (FMap.find a_snd (arr_to_ll st)) eqn:H_found;
+            try now exists n.
+            pose proof (nodup_state_morph_some_aux a_snd st i) as H_in.
+            now destruct H_in as [x H_in].
+        Qed.
+
+        Lemma nodup_state_morph_none : forall st a_snd n, 
+            in_dec N.eq_dec a_snd st = right n -> 
+            FMap.find a_snd (arr_to_ll st) = None.
+        Proof.
+            intros * H_dup.
+            destruct (FMap.find a_snd (arr_to_ll st)) eqn:H_found; auto.
+            now pose proof (nodup_state_morph_none_aux a_snd st n).
+        Qed.
+
         Lemma swap_owners_coh : forall a_fst a_snd st st' acts,
             swap_owners_arr a_fst a_snd st = Ok (st', acts) ->
             swap_owners_ll a_fst a_snd (state_morph st) = Ok (state_morph st', acts).
         Proof.
             intros * H_swap.
             apply swap_owner_arr_no_acts in H_swap as H_acts.
-            rewrite H_acts in *.
-            unfold swap_owners_ll.
-            destruct (FMap.find a_fst (state_morph st)) eqn:H_fst_found.
-            (* case where a_fst is there *)
-            -   simpl.
-                unfold state_morph in *.
-                apply ll_fst_found_snd_found in H_fst_found as H_prev_found.
-                destruct H_prev_found as [a_prev H_prev_found].
-                rewrite H_prev_found.
-                f_equal.
-                apply pair_lem.
-                split.
-                2:{ pose proof (add_owner_arr_no_acts).
-                    now apply swap_owner_arr_no_acts in H_swap. }
-                unfold swap_owners_arr in H_swap.
-                inversion H_swap as [H_res].
-                now apply arr_to_ll_swap.
-            (* case where a_fst is not there *)
-            -   unfold state_morph in *.
-                apply swap_idempotent in H_swap; auto.
-                now rewrite H_swap.
+            rewrite H_acts in *. clear H_acts.
+            unfold swap_owners_arr, swap_owners_ll in *.
+            unfold state_morph.
+            destruct (in_dec N.eq_dec a_snd st) eqn:H_dup.
+            -   apply nodup_state_morph_some in H_dup.
+                destruct H_dup as [x H_dup].
+                rewrite H_dup.
+                now inversion H_swap.
+            -   apply nodup_state_morph_none in H_dup.
+                rewrite H_dup.
+                destruct (FMap.find a_fst (arr_to_ll st)) eqn:H_fst_found.
+                (* case where a_fst is there *)
+                +   simpl.
+                    apply ll_fst_found_snd_found in H_fst_found as H_prev_found.
+                    destruct H_prev_found as [a_prev H_prev_found].
+                    rewrite H_prev_found.
+                    f_equal.
+                    apply pair_lem.
+                    split; auto.
+                    inversion H_swap as [H_res].
+                    now apply arr_to_ll_swap.
+                (* case where a_fst is not there *)
+                +   inversion H_swap as [H_swap'].
+                    now rewrite swap_idempotent.
         Qed.
 
         Lemma swap_owners_coh' : forall a_fst a_snd st e,
@@ -597,28 +655,56 @@ Section Isomorphism.
             now apply ll_remove_failure in H_remove.
         Qed.
 
+        Lemma nodup_state_morph_some' : forall st a_snd n, 
+            FMap.find a_snd st = Some n ->
+            exists i, in_dec N.eq_dec a_snd (ll_to_arr st) = left i.
+        Proof.
+            intros * H_snd_in.
+            destruct (in_dec N.eq_dec a_snd (ll_to_arr st)) eqn:H_dec;
+            try now exists i.
+            now apply (nodup_state_morph_some'_aux) in H_snd_in.
+        Qed.
+
+        Lemma nodup_state_morph_none' : forall st a_snd, 
+            FMap.find a_snd st = None ->
+            exists n, in_dec N.eq_dec a_snd (ll_to_arr st) = right n.
+        Proof.
+            intros * H_snd_out.
+            destruct (in_dec N.eq_dec a_snd (ll_to_arr st)) eqn:H_dec;
+            try now exists n.
+            now apply (nodup_state_morph_none'_aux a_snd st) in H_snd_out.
+        Qed.
+
         Lemma swap_owners_coh_inv : forall a_fst a_snd st st' acts,
             swap_owners_ll a_fst a_snd st = Ok (st', acts) ->
             swap_owners_arr a_fst a_snd (state_morph_inv st) = Ok (state_morph_inv st', acts).
         Proof.
             intros * H_swap.
             unfold swap_owners_ll, swap_owners_arr, state_morph_inv in *.
-            destruct (FMap.find a_fst st) eqn:H_found.
-            rename n into a_next.
-            (* a_fst is owner *)
-            -   simpl in *.
-                apply ll_fst_found_snd_found' in H_found as H_found'.
-                destruct H_found' as [a_prev H_found'].
-                rewrite H_found' in H_swap.
-                inversion H_swap.
-                clear H0 H1.
-                f_equal. apply pair_lem. split; auto.
-                now apply ll_to_arr_swap.
-            (* a_fst is not owner *)
-            -   inversion H_swap.
-                rewrite <- H0.
-                clear H0 H1 H_swap.
-                now rewrite swap_idempotent'.
+            destruct (FMap.find a_snd st) eqn:H_snd_in.
+            +   pose proof (nodup_state_morph_some' st a_snd n H_snd_in) as H_left.
+                destruct H_left as [i H_left].
+                rewrite H_left.
+                now inversion H_swap.
+            +   pose proof (nodup_state_morph_none' st a_snd H_snd_in) as H_right.
+                destruct H_right as [n H_right].
+                rewrite H_right.
+                destruct (FMap.find a_fst st) eqn:H_found.
+                rename n into a_next.
+                (* a_fst is owner *)
+                -   simpl in *.
+                    apply ll_fst_found_snd_found' in H_found as H_found'.
+                    destruct H_found' as [a_prev H_found'].
+                    rewrite H_found' in H_swap.
+                    inversion H_swap.
+                    clear H0 H1.
+                    f_equal. apply pair_lem. split; auto.
+                    now apply ll_to_arr_swap.
+                (* a_fst is not owner *)
+                -   inversion H_swap.
+                    rewrite <- H0.
+                    clear H0 H1 H_swap.
+                    now rewrite swap_idempotent'.
         Qed.
 
         Lemma swap_owners_coh'_inv : forall a_fst a_snd st e,
@@ -750,39 +836,82 @@ End Isomorphism.
 
 Section Specification.
 
-    Axiom nodup_empty : NoDup empty_array.
 
-    Lemma nodup_add : forall a prev_state new_state new_acts,
-        add_owner_arr a prev_state = Ok (new_state, new_acts) ->
-        NoDup prev_state -> NoDup new_state.
-    Admitted.
+    Section NoDup.
+        Lemma nodup_empty : NoDup empty_array.
+        Proof. now constructor. Qed.
 
-    Lemma nodup_remove : forall a prev_state new_state new_acts,
-        remove_owner_arr a prev_state = Ok (new_state, new_acts) ->
-        NoDup prev_state -> NoDup new_state.
-    Admitted.
+        Lemma nodup_add : forall a prev_state new_state new_acts,
+            add_owner_arr a prev_state = Ok (new_state, new_acts) ->
+            NoDup prev_state -> NoDup new_state.
+        Proof.
+            intros * H_add H_nodup.
+            unfold add_owner_arr in H_add.
+            destruct (in_dec N.eq_dec a prev_state) in H_add; try inversion H_add.
+            now apply NoDup_cons.
+        Qed.
 
-    Lemma nodup_swap : forall a_fst a_snd prev_state new_state new_acts,
-        swap_owners_arr a_fst a_snd prev_state = Ok (new_state, new_acts) ->
-        NoDup prev_state -> NoDup new_state.
-    Admitted.
+        Axiom nodup_remove_aux : forall (l : list N) (n : N),
+            NoDup l -> NoDup (List.remove N.eq_dec n l).
 
-    Definition no_duplciates_arr (st : owners_arr) : Prop := NoDup st.
+        Lemma nodup_remove : forall a prev_state new_state new_acts,
+            remove_owner_arr a prev_state = Ok (new_state, new_acts) ->
+            NoDup prev_state -> NoDup new_state.
+        Proof.
+            intros * H_remove H_nodup.
+            inversion H_remove as [[H_remove0 H_remove1]].
+            now apply nodup_remove_aux.
+        Qed.
 
-    Definition no_duplciates_ll (st : owners_ll) : Prop :=
-        todo. (* you can cycle through the list and return to SENTINEL *)
+        Axiom nodup_swap_aux : forall a_fst a_snd prev_state n,
+            in_dec N.eq_dec a_snd prev_state = right n -> 
+            NoDup prev_state -> 
+            NoDup (map (fun o : N => if (o =? a_fst)%N then a_snd else o) prev_state).
+
+        Lemma nodup_swap : forall a_fst a_snd prev_state new_state new_acts,
+            swap_owners_arr a_fst a_snd prev_state = Ok (new_state, new_acts) ->
+            NoDup prev_state -> NoDup new_state.
+        Proof.
+            intros * H_swap H_nodup.
+            unfold swap_owners_arr in H_swap.
+            destruct (in_dec N.eq_dec a_snd prev_state) eqn:H_dup in H_swap;
+            inversion H_swap as [[H_states H_acts]];
+            try now rewrite <- H_states.
+            clear H_swap H_acts.
+            now apply (nodup_swap_aux a_fst a_snd prev_state n).
+        Qed.
+
+    End NoDup.
+
+    Section NoDuplicates.
+    
+        Definition no_duplicates_arr (st : owners_arr) : Prop := NoDup st.
+
+        Definition no_duplicates_ll (st : owners_ll) : Prop :=
+            todo. (* you can cycle through the list and return to SENTINEL *)
+
+        Lemma nodup_carried : forall cstate_arr cstate_ll,
+            no_duplicates_arr cstate_arr -> 
+            cstate_arr = state_morph_inv cstate_ll -> 
+            no_duplicates_ll cstate_ll.
+        Proof.
+            intros * H_nodup_arr H_cstate.
+        Admitted.
+    
+    End NoDuplicates.
+
 
     (* proved by contract induction *)
-    Theorem no_duplciates (cstate : owners_arr) bstate caddr :
+    Theorem no_duplciates_arr bstate caddr :
         reachable bstate -> 
         env_contracts bstate caddr = Some (C_arr : WeakContract) ->
         (* *)
         exists (cstate : owners_arr), contract_state bstate caddr = Some cstate /\
         (* *)
-        no_duplciates_arr cstate.
+        no_duplicates_arr cstate.
     Proof.
         intros reachable_st contract_at_caddr.
-        unfold no_duplciates_arr in *.
+        unfold no_duplicates_arr in *.
         contract_induction; auto; intros.
         (* Please establish the invariant after deployment of the contract *)
         -   simpl in init_some.
@@ -815,14 +944,30 @@ Section Specification.
         -   solve_facts.
     Qed.
 
-    (* proved by morphism induction *)
-    Theorem no_duplciates' (cstate : owners_ll) : 
-        cstate_reachable C_ll cstate -> no_duplciates_ll cstate.
-    Proof.
-        intros.
-        (* left_cm_induction *)
+    Lemma no_duplciates_rr_aux : forall cstate_arr,
+        cstate_reachable C_arr cstate_arr -> no_duplicates_arr cstate_arr.
     Admitted.
 
+    (* proved by morphism induction *)
+    Theorem no_duplciates_ll bstate caddr (trace : ChainTrace empty_state bstate) : 
+        (* Forall reachable states with contract at caddr, *)
+        env_contracts bstate caddr = Some (C_ll : WeakContract) ->
+        (* cstate is the state of the contract AND *)
+        exists cstate_ll, contract_state bstate caddr = Some cstate_ll /\
+        (* cstate_ll has no duplicate owners *)
+        no_duplicates_ll cstate_ll.
+    Proof.
+        intros c_at_caddr.
+        pose proof (left_cm_induction f_inv bstate caddr trace c_at_caddr)
+        as H_cm_ind.
+        destruct H_cm_ind as [cstate_ll [contr_cstate_ll [cstate_arr [reach H_cm_ind]]]].
+        exists cstate_ll.
+        repeat split; auto.
+        cbn in H_cm_ind.
+        assert (no_duplicates_arr cstate_arr) as H_nodup by (now apply no_duplciates_rr_aux).
+        now apply (nodup_carried cstate_arr cstate_ll).
+    Qed.
+        
 End Specification.
 
 End ContractOptimization.
