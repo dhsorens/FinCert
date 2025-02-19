@@ -3,6 +3,9 @@
 * Specification: https://ieeexplore.ieee.org/abstract/document/10174866
 * Paper associated with this: 
     Sorensen, D. (In)Correct Smart Contract Specifications. ICBC 2024.
+    Sorensen, D. Structured Pools for Tokenized Carbon Credits. ICBC 2023.
+    Jaffer, S., Dales, M., Ferris, P., Sorensen, D., Swinfield, T., Message, R., Keshav, S., and Madhavapeddy, A. Global, robust and comparable digital carbon assets. ICBC 2024.
+    Sorensen, D. Tokenized Carbon Credits. Ledger, 2023.
 *)
 
 (* import the specification of a structured pool and an FA2 contract *)
