@@ -207,17 +207,92 @@ Definition calc_delta_y (rate_in : N) (rate_out : N) (qty_trade : N) (k : N) (x 
 (* rate_decrease property; rates_balance property; rates_balance_2 *)
 Definition calc_rx' (rate_in : N) (rate_out : N) (qty_trade : N) (d : N) (x : N) : N := todo.
 
+Definition token_eqb (t1 t2 : token) : bool :=
+    N.eqb t1.(token_id) t2.(token_id).
+
+(* trade entrypoint definition *)
+
 Definition trade_entrypoint
     (ctx: ContractCallContext) (cstate : state) (msg_payload : trade_data) : result := 
-    (* check that token_in and token_out have exchange rates *)
-    (* check inputs to the trade calculation are all positive *)
+    (* check that token_in and token_out have exchange rates and
+       check inputs to the trade calculation are all positive *)
+    match FMap.find msg_payload.(token_in_trade) (stor_tokens_held cstate)
+    with | None => Err 0 | Some x => if negb (N.ltb 0 x) then Err 0 else
+    match FMap.find msg_payload.(token_out_trade) (stor_tokens_held cstate)
+    with | None => Err 0 | Some y => if negb (N.ltb 0 y) then Err 0 else
+    match FMap.find msg_payload.(token_in_trade) (stor_rates cstate)
+    with | None => Err 0 | Some r_x => if negb (N.ltb 0 r_x) then Err 0 else
+    match FMap.find msg_payload.(token_out_trade) (stor_rates cstate)
+    with | None => Err 0 | Some r_y => if negb (N.ltb 0 r_y) then Err 0 else
     (* trade is priced calc_delta_y appropriately *)
-    (* change in rate calculated with calc_rx' *)
-    (* trade emits two TRANSFER actions *)
+    let t_x := msg_payload.(token_in_trade) in 
+    let t_y := msg_payload.(token_out_trade) in
+    if (token_eqb t_x t_y) then Err 0 else
+    let q := msg_payload.(qty_trade) in 
+    let rate_in := (get_rate t_x (stor_rates cstate)) in 
+    let rate_out := (get_rate t_y (stor_rates cstate)) in 
+    let k := (stor_outstanding_tokens cstate) in 
+    let x := get_bal t_x (stor_tokens_held cstate) in 
+    let delta_x := msg_payload.(qty_trade) in 
+    if (N.ltb delta_x 0) then Err 0 else
+    let delta_y := calc_delta_y rate_in rate_out delta_x k x in 
+    if (N.ltb delta_y 0) then Err 0 else
+    let prev_bal_y := get_bal t_y (stor_tokens_held cstate) in 
+    let prev_bal_x := get_bal t_x (stor_tokens_held cstate) in 
     (* tokens_held updated appropriately *)
-    (* outstanding updated appropriately *)
+    let stor_tokens_held' :=
+        FMap.add t_x (prev_bal_x + delta_x) cstate.(stor_tokens_held) in 
+    let stor_tokens_held' :=
+        FMap.add t_y (prev_bal_y - delta_y) stor_tokens_held' in 
+    (* change in rate calculated with calc_rx' *)
+    let r_x' := calc_rx' rate_in rate_out q k x in 
+    let stor_rates' := FMap.add t_x r_x' cstate.(stor_rates) in 
+    (* trade emits two TRANSFER actions *)
+    (* transfer 1 : to x *)
+    let transfer_to_x := {|
+        to_ := ctx.(ctx_contract_address) ;
+        transfer_token_id := t_x.(token_id) ;
+        amount := q ;
+    |} in 
+    let transfer_data_x := {|
+        from_ := ctx.(ctx_contract_address) ;
+        txs := [ transfer_to_x ] ;
+    |} in 
+    let transfer_payload_x := [ transfer_data_x ] in 
+    let transfer_tx := act_call 
+        (* call to the correct token address *)
+        (msg_payload.(token_in_trade).(token_address))
+        (* with amount = 0 *)
+        0
+        (* and payload transfer_payload_x *)
+        (serialize (FA2Spec.Transfer transfer_payload_x)) in 
+    (* transfer 2: to y *)
+    let transfer_to_y := {|
+        to_ := ctx.(ctx_from) ;
+        transfer_token_id := t_y.(token_id) ;
+        amount := calc_delta_y rate_in rate_out q k x ;
+    |} in 
+    let transfer_data_y := {|
+        from_ := ctx.(ctx_contract_address) ;
+        txs := [ transfer_to_y ] ;
+    |} in 
+    let transfer_payload_y := [ transfer_data_y ] in 
+    let transfer_ty := act_call 
+        (* call to the correct token address *)
+        (msg_payload.(token_out_trade).(token_address))
+        (* with amount = 0 *)
+        0 
+        (* and payload transfer_payload_y *)
+        (serialize (FA2Spec.Transfer transfer_payload_y)) in 
     (* trade amts are nonnegative *)
-    todo.
+    let new_state := {|
+        stor_rates := stor_rates' ;
+        stor_tokens_held := stor_tokens_held' ;
+        stor_pool_token := cstate.(stor_pool_token) ;
+        stor_outstanding_tokens := cstate.(stor_outstanding_tokens) ; 
+    |} in
+    Ok (new_state, [ transfer_tx ; transfer_ty ])
+    end end end end.
 
 (* receive function definition *)
 Definition receive (_ : Chain) (ctx : ContractCallContext) (st : state) 
