@@ -91,7 +91,7 @@ Definition pool_entrypoint
     let token := token_pooled msg_payload in
     let qty := qty_pooled msg_payload in
     let old_bal := get_bal token (stor_tokens_held cstate) in
-    let cstate' := FMap.add token (old_bal + qty) (stor_tokens_held cstate) in
+    let stor_tokens_held' := FMap.add token (old_bal + qty) (stor_tokens_held cstate) in
     (* outstanding tokens change appropriately *)
     let stor_outstanding_tokens' := stor_outstanding_tokens cstate + r_x * qty in
     (* emit a TRANSFER call to the token in storage *)
@@ -127,7 +127,7 @@ Definition pool_entrypoint
     (* the state gets renewed *)
     let new_state := {|
         stor_rates := cstate.(stor_rates) ;
-        stor_tokens_held := cstate' ;
+        stor_tokens_held := stor_tokens_held' ;
         stor_pool_token := cstate.(stor_pool_token) ;
         stor_outstanding_tokens := stor_outstanding_tokens' ; 
     |} in
@@ -144,15 +144,61 @@ Definition unpool_entrypoint
     match FMap.find msg_payload.(token_unpooled) (stor_rates cstate)
     with | None => Err 0 | Some r_x =>
     (* tokens_held goes down appropriately *)
+    if negb (N.leb
+        (qty_unpooled msg_payload)
+        (get_rate (token_unpooled msg_payload) (stor_rates cstate) * get_bal (token_unpooled msg_payload) (stor_tokens_held cstate)))
+    then Err 0 else
     let token := msg_payload.(token_unpooled) in
     let r_x := get_rate token (stor_rates cstate) in 
     let qty := calc_rx_inv r_x msg_payload.(qty_unpooled) in
     let old_bal := get_bal token (stor_tokens_held cstate) in 
-        (* let new_bal := get_bal token (stor_tokens_held cstate') in  *)
+    let new_bal := old_bal - qty in 
+    let stor_tokens_held' := FMap.add token new_bal (stor_tokens_held cstate) in 
     (* outstanding tokens change appropriately *)
-    (* rates don't change *)
+    let rate_in := get_rate msg_payload.(token_unpooled) (stor_rates cstate) in 
+    let qty_unpooled_nat := msg_payload.(qty_unpooled) in 
+    let stor_outstanding_tokens' := stor_outstanding_tokens cstate - qty_unpooled_nat in 
     (* emits a BURN call to the pool_token in storage *)
-    todo
+    let burn_data := {|
+        retiring_party := ctx.(ctx_from) ;
+        retire_token_id := msg_payload.(token_unpooled).(token_id) ;
+        retire_amount := msg_payload.(qty_unpooled) ;
+    |} in 
+    let burn_payload := [ burn_data ] in 
+    let burn_call := act_call
+        (* calls the pool token address *)
+        (stor_pool_token cstate).(token_address)
+        (* with amount 0 *)
+        0
+        (* with payload burn_payload *)
+        (serialize (FA2Spec.Retire burn_payload)) in 
+    (* emits a TRANSFER call to the token being unpooled *)
+    let transfer_to := {|
+        to_ :=  ctx.(ctx_from) ;
+        transfer_token_id := msg_payload.(token_unpooled).(token_id) ;
+        amount := msg_payload.(qty_unpooled) / rate_in ;
+    |} in 
+    let txs := [ transfer_to ] in 
+    let transfer_data := {|
+        from_ := ctx.(ctx_contract_address) ;
+        txs := txs ;
+    |} in 
+    let transfer_payload := [ transfer_data ] in
+    let transfer_call := act_call 
+        (* call to the token address *)
+        (msg_payload.(token_unpooled).(token_address))
+        (* with amount = 0 *)
+        0 
+        (* with payload transfer_payload *)
+        (serialize (FA2Spec.Transfer transfer_payload)) in 
+    (* end txn *)
+    let new_state := {|
+        stor_rates := cstate.(stor_rates) ;
+        stor_tokens_held := stor_tokens_held' ;
+        stor_pool_token := cstate.(stor_pool_token) ;
+        stor_outstanding_tokens := stor_outstanding_tokens' ; 
+    |} in
+    Ok (new_state, [ burn_call ; transfer_call ])
     end.
 
 (* lots *)
@@ -351,21 +397,160 @@ Proof.
     (* unpool entrypoint spec *)
     -   unfold unpool_entrypoint_check.
         intros * H_recv_ok.
-        admit.
+        simpl in H_recv_ok.
+        rewrite <- unpool_types in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        exists r_x.
+        now rewrite <- stor_rates_types.
     -   unfold unpool_entrypoint_check_2.
         intros * H_recv_ok.
-        admit.
+        simpl in H_recv_ok.
+        rewrite <- unpool_types in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        rewrite <- stor_rates_types.
+        rewrite <- stor_tokens_held_types.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N)
+        eqn:H_negb;
+        try inversion H_recv_ok.
+        clear H2 H1 H0 H_recv_ok.
+        assert ((qty_unpooled msg_payload <=?
+        get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+        get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N = true) as H_negb_true.
+        {   destruct (qty_unpooled msg_payload <=?
+                get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+                get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N;
+            auto. }
+        clear H_negb.
+        now apply N.leb_le.
     -   unfold unpool_emits_txns.
         intros * H_recv_ok.
-        admit.
-    -   admit.
-    -   admit.
+        rewrite <- unpool_types in H_recv_ok.
+        cbn in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        exists ({|
+            retiring_party := ctx_from ctx;
+            retire_token_id := token_id (token_unpooled msg_payload);
+            retire_amount := qty_unpooled msg_payload
+          |}).
+        exists ([{|
+            retiring_party := ctx_from ctx;
+            retire_token_id := token_id (token_unpooled msg_payload);
+            retire_amount := qty_unpooled msg_payload
+          |}]).
+        exists ({|
+            to_ := ctx_from ctx;
+            transfer_token_id := token_id (token_unpooled msg_payload);
+            amount :=
+              qty_unpooled msg_payload /
+              get_rate (token_unpooled msg_payload) (stor_rates cstate)
+          |}).
+        exists ({|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_from ctx;
+                 transfer_token_id := token_id (token_unpooled msg_payload);
+                 amount :=
+                   qty_unpooled msg_payload /
+                   get_rate (token_unpooled msg_payload) (stor_rates cstate)
+               |}]
+          |}).
+        exists ([{|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_from ctx;
+                 transfer_token_id := token_id (token_unpooled msg_payload);
+                 amount :=
+                   qty_unpooled msg_payload /
+                   get_rate (token_unpooled msg_payload) (stor_rates cstate)
+               |}]
+          |}]).
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N);
+        try inversion H_recv_ok.
+        rewrite <- stor_rates_types.
+        rewrite <- stor_pool_token_types.
+        repeat split; try now cbn.
+    -   rename H into H_recv_ok.
+        rewrite <- unpool_types in H_recv_ok.
+        do 2 rewrite <- stor_tokens_held_types.
+        rewrite <- stor_rates_types.
+        simpl in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N);
+        try inversion H_recv_ok.
+        unfold get_bal.
+        cbn.
+        now rewrite fmap_find_add.
+    -   rename H into H_recv_ok.
+        simpl in H_recv_ok.
+        rewrite <- unpool_types in H_recv_ok.
+        do 2 rewrite <- stor_tokens_held_types.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N);
+        try inversion H_recv_ok.
+        intros t H_t_neq.
+        cbn.
+        pose proof (fmap_add_neq (stor_tokens_held cstate) t (token_unpooled msg_payload) (get_bal (token_unpooled msg_payload) (stor_tokens_held cstate) -
+        calc_rx_inv (get_rate (token_unpooled msg_payload) (stor_rates cstate))
+          (qty_unpooled msg_payload)) H_t_neq) as H_unchanged.
+        unfold get_bal in *.
+        now rewrite H_unchanged.
     -   unfold unpool_rates_unchanged.
         intros * H_recv_ok.
-        admit.
+        do 2 rewrite <- stor_rates_types.
+        rewrite <- unpool_types in H_recv_ok.
+        simpl in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N);
+        now try inversion H_recv_ok.
     -   unfold unpool_outstanding.
         intros * H_recv_ok.
-        admit.
+        do 2 rewrite <- stor_outstanding_tokens_types.
+        rewrite <- unpool_types in H_recv_ok.
+        simpl in H_recv_ok.
+        unfold unpool_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok.
+        destruct (negb
+            (qty_unpooled msg_payload <=?
+            get_rate (token_unpooled msg_payload) (stor_rates cstate) *
+            get_bal (token_unpooled msg_payload) (stor_tokens_held cstate))%N);
+        now try inversion H_recv_ok.
     (* trade entrypoint spec *)
     -   unfold trade_entrypoint_check.
         intros * H_recv_ok.
