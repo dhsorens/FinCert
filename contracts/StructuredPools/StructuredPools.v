@@ -313,7 +313,18 @@ Section StructuredPoolsCorrect.
 
 Context {other_entrypoint : Type}.
 
-Instance msg_spec : @Msg_Spec Base other_entrypoint msg := todo.
+Instance msg_spec : @Msg_Spec Base other_entrypoint msg.
+Proof.
+    split.
+    -   intros m.
+        exact (pool m).
+    -   intros m.
+        exact (unpool m).
+    -   intros m.
+        exact (trade m).
+    -   intros m.
+        exact (None).
+Qed.
 Instance setup_spec : Setup_Spec setup := todo.
 Instance state_spec : State_Spec state := todo.
 Instance error_spec : Error_Spec error := todo.
@@ -325,6 +336,8 @@ Axiom stor_rates_types : forall cstate, stor_rates cstate = StructuredPoolsSpec.
 Axiom stor_pool_token_types : forall cstate, stor_pool_token cstate = StructuredPoolsSpec.stor_pool_token cstate.
 Axiom stor_tokens_held_types : forall cstate, stor_tokens_held cstate = StructuredPoolsSpec.stor_tokens_held cstate.
 Axiom stor_outstanding_tokens_types : forall cstate, stor_outstanding_tokens cstate = StructuredPoolsSpec.stor_outstanding_tokens cstate.
+Axiom init_rates_types : forall n, init_rates n = StructuredPoolsSpec.init_rates n.
+Axiom init_pool_token_types : forall n, init_pool_token n = StructuredPoolsSpec.init_pool_token n.
 
 Lemma fmap_find_add : forall (m : FMap token N) k v, 
     FMap.find k (FMap.add k v m) = Some v.
@@ -649,6 +662,35 @@ Proof.
     -   admit.
     -   admit.
     -   admit.
+    (* other entrypoint specification *)
+    -   unfold other_rates_unchanged.
+        intros * H_recv_ok t.
+        cbn in H_recv_ok.
+        do 2 rewrite <- stor_rates_types.
+        unfold receive in H_recv_ok.
+        assert (other o = None) as H_other.
+        {   admit. }
+        rewrite H_other in H_recv_ok.
+        inversion H_recv_ok.
+    -   unfold other_balances_unchanged.
+        intros * H_recv_ok t.
+        cbn in H_recv_ok.
+        do 2 rewrite <- stor_tokens_held_types.
+        unfold receive in H_recv_ok.
+        assert (other o = None) as H_other.
+        {   admit. }
+        rewrite H_other in H_recv_ok.
+        inversion H_recv_ok.
+    -   unfold other_outstanding_unchanged.
+        intros * H_recv_ok.
+        cbn in H_recv_ok.
+        do 2 rewrite <- stor_outstanding_tokens_types.
+        unfold receive in H_recv_ok.
+        assert (other o = None) as H_other.
+        {   admit. }
+        rewrite H_other in H_recv_ok.
+        inversion H_recv_ok.
+    (* isolate the specification of calc_rx' and calc_delta_y *)
     -   admit.
     -   admit.
     -   admit.
@@ -657,14 +699,28 @@ Proof.
     -   admit.
     -   admit.
     -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
+    (* isolate the initialization specification *)
+    -   unfold initialized_with_positive_rates.
+        intros * H_init_ok. cbn in H_init_ok.
+        intros * H_find.
+        admit.
+    -   unfold initialized_with_zero_balance.
+        intros * H_init_ok. cbn in H_init_ok.
+        intro.
+        admit.
+    -   unfold initialized_with_zero_outstanding.
+        intros * H_init_ok. cbn in H_init_ok.
+        admit.
+    -   unfold initialized_with_init_rates.
+        intros * H_init_ok. cbn in H_init_ok.
+        rewrite <- stor_rates_types.
+        rewrite <- init_rates_types.
+        admit.
+    -   unfold initialized_with_pool_token.
+        intros * H_init_ok. cbn in H_init_ok.
+        rewrite <- stor_pool_token_types.
+        rewrite <- init_pool_token_types.
+        admit.
 Admitted.
 
 End StructuredPoolsCorrect.
