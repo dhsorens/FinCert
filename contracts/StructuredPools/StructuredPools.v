@@ -424,7 +424,7 @@ Proof.
         rewrite <- pool_types in H_recv_ok.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         exists r_x.
         now rewrite <- stor_rates_types.
@@ -434,7 +434,7 @@ Proof.
         rewrite <- pool_types in H_recv_ok.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         exists ({|
             to_ := token_address (token_pooled msg_payload);
@@ -481,7 +481,7 @@ Proof.
         do 2 rewrite <- stor_tokens_held_types.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         unfold get_bal. cbn.
         now rewrite fmap_find_add.
@@ -491,7 +491,7 @@ Proof.
         do 2 rewrite <- stor_tokens_held_types.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         intros t H_t_neq.
         cbn.
@@ -507,7 +507,7 @@ Proof.
         do 2 rewrite <- stor_rates_types.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         now try inversion H_recv_ok.
     -   unfold pool_outstanding.
         intros * H_recv_ok.
@@ -516,7 +516,7 @@ Proof.
         do 2 rewrite <- stor_outstanding_tokens_types.
         unfold pool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_pooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         cbn.
         rewrite <- stor_rates_types.
@@ -530,7 +530,7 @@ Proof.
         rewrite <- unpool_types in H_recv_ok.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         exists r_x.
         now rewrite <- stor_rates_types.
@@ -542,7 +542,7 @@ Proof.
         rewrite <- stor_rates_types.
         rewrite <- stor_tokens_held_types.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         destruct (negb
             (qty_unpooled msg_payload <=?
@@ -566,7 +566,7 @@ Proof.
         cbn in H_recv_ok.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         exists ({|
             retiring_party := ctx_from ctx;
@@ -622,7 +622,7 @@ Proof.
         simpl in H_recv_ok.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         destruct (negb
             (qty_unpooled msg_payload <=?
@@ -638,7 +638,7 @@ Proof.
         do 2 rewrite <- stor_tokens_held_types.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         destruct (negb
             (qty_unpooled msg_payload <=?
@@ -659,7 +659,7 @@ Proof.
         simpl in H_recv_ok.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         destruct (negb
             (qty_unpooled msg_payload <=?
@@ -673,7 +673,7 @@ Proof.
         simpl in H_recv_ok.
         unfold unpool_entrypoint in H_recv_ok.
         destruct (FMap.find (token_unpooled msg_payload) (stor_rates cstate)) 
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok.
         destruct (negb
             (qty_unpooled msg_payload <=?
@@ -688,22 +688,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -730,22 +730,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -778,22 +778,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -826,22 +826,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -883,22 +883,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -930,22 +930,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -969,22 +969,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1016,22 +1016,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1057,22 +1057,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1099,22 +1099,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1200,22 +1200,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1242,22 +1242,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1289,22 +1289,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1332,22 +1332,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1371,22 +1371,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1416,22 +1416,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1459,22 +1459,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
@@ -1501,22 +1501,22 @@ Proof.
         rewrite <- trade_types in H_recv_ok.
         unfold trade_entrypoint in H_recv_ok.
         destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
-        as [x | x] eqn:H_x;
+        as [x | ] eqn:H_x;
         try inversion H_recv_ok.  clear H0.
         destruct ((0 <? x)%N) eqn:H_x_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
-        as [y | y] eqn:H_y;
+        as [y | ] eqn:H_y;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? y)%N) eqn:H_y_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
-        as [r_x | r_x] eqn:H_rx;
+        as [r_x | ] eqn:H_rx;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_x)%N) eqn:H_rx_pos.
         2:{   inversion H_recv_ok. }
         destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
-        as [r_y | r_y] eqn:H_ry;
+        as [r_y | ] eqn:H_ry;
         try inversion H_recv_ok. clear H0.
         destruct ((0 <? r_y)%N) eqn:H_ry_pos.
         2:{   inversion H_recv_ok. }
