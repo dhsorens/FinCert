@@ -22,6 +22,7 @@ From ConCert.Execution Require Import Serializable.
 From ConCert.Utils Require Import RecordUpdate.
 From ConCert.Utils Require Import Extras.
 From Coq Require Import Ensembles.
+From Coq Require Import NArith.
 From Coq Require Import ZArith_base.
 From Coq Require Import QArith_base.
 From Coq Require Import String.
@@ -83,7 +84,12 @@ End Serialization.
 (* init function definition *)
 Definition init (_ : Chain) (_ : ContractCallContext) (n : setup) :
     ResultMonad.result state error := 
-    todo.
+    Ok ({|
+        stor_rates := n.(init_rates) ;
+        stor_tokens_held := FMap.empty ;
+        stor_pool_token := n.(init_pool_token) ;
+        stor_outstanding_tokens := 0 ;
+    |}).
 
 (* entrypoint function definitions *)
 Definition pool_entrypoint 
@@ -208,11 +214,23 @@ Definition unpool_entrypoint
 (* lots *)
 Definition calc_delta_y (rate_in : N) (rate_out : N) (qty_trade : N) (k : N) (x : N) : N := todo.
 
+Lemma delta_y_lt_y : forall cstate msg_payload r_x r_y qty_trade k x y,
+    FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate) = Some x -> 
+    FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate) = Some y -> 
+    FMap.find (token_in_trade msg_payload) (stor_rates cstate) = Some r_x -> 
+    FMap.find (token_out_trade msg_payload) (stor_rates cstate) = Some r_y -> 
+    0 < k -> 0 < x -> 0 <= qty_trade -> 0 < r_x -> 0 < r_y ->
+    calc_delta_y r_x r_y qty_trade k x < y.
+Admitted.
+
 (* rate_decrease property; rates_balance property; rates_balance_2 *)
 Definition calc_rx' (rate_in : N) (rate_out : N) (qty_trade : N) (d : N) (x : N) : N := todo.
 
 Definition token_eqb (t1 t2 : token) : bool :=
     N.eqb t1.(token_id) t2.(token_id).
+
+Lemma token_eq_eqb : forall t1 t2, token_eqb t1 t2 = true <-> t1 = t2.
+Admitted.
 
 (* trade entrypoint definition *)
 
@@ -221,13 +239,13 @@ Definition trade_entrypoint
     (* check that token_in and token_out have exchange rates and
        check inputs to the trade calculation are all positive *)
     match FMap.find msg_payload.(token_in_trade) (stor_tokens_held cstate)
-    with | None => Err 0 | Some x => if negb (N.ltb 0 x) then Err 0 else
+    with | None => Err 0 | Some x => if (N.ltb 0 x) then 
     match FMap.find msg_payload.(token_out_trade) (stor_tokens_held cstate)
-    with | None => Err 0 | Some y => if negb (N.ltb 0 y) then Err 0 else
+    with | None => Err 0 | Some y => if (N.ltb 0 y) then
     match FMap.find msg_payload.(token_in_trade) (stor_rates cstate)
-    with | None => Err 0 | Some r_x => if negb (N.ltb 0 r_x) then Err 0 else
+    with | None => Err 0 | Some r_x => if (N.ltb 0 r_x) then
     match FMap.find msg_payload.(token_out_trade) (stor_rates cstate)
-    with | None => Err 0 | Some r_y => if negb (N.ltb 0 r_y) then Err 0 else
+    with | None => Err 0 | Some r_y => if (N.ltb 0 r_y) then
     (* trade is priced calc_delta_y appropriately *)
     let t_x := msg_payload.(token_in_trade) in 
     let t_y := msg_payload.(token_out_trade) in
@@ -236,6 +254,7 @@ Definition trade_entrypoint
     let rate_in := (get_rate t_x (stor_rates cstate)) in 
     let rate_out := (get_rate t_y (stor_rates cstate)) in 
     let k := (stor_outstanding_tokens cstate) in 
+    if (N.ltb 0 k) then
     let x := get_bal t_x (stor_tokens_held cstate) in 
     let delta_x := msg_payload.(qty_trade) in 
     if (N.ltb delta_x 0) then Err 0 else
@@ -296,7 +315,7 @@ Definition trade_entrypoint
         stor_outstanding_tokens := cstate.(stor_outstanding_tokens) ; 
     |} in
     Ok (new_state, [ transfer_tx ; transfer_ty ])
-    end end end end.
+    else Err 0 else Err 0 end else Err 0 end else Err 0 end else Err 0 end.
 
 (* receive function definition *)
 Definition receive (_ : Chain) (ctx : ContractCallContext) (st : state) 
@@ -316,6 +335,7 @@ Definition C : Contract setup msg state error :=
 Section StructuredPoolsCorrect.
 
 Context {other_entrypoint : Type}.
+(* Context {other_none : forall o : other_entrypoint, Msg_Spec.other o = None}. *)
 
 Instance msg_spec : @Msg_Spec Base other_entrypoint msg.
 Proof.
@@ -342,18 +362,35 @@ Axiom stor_tokens_held_types : forall cstate, stor_tokens_held cstate = Structur
 Axiom stor_outstanding_tokens_types : forall cstate, stor_outstanding_tokens cstate = StructuredPoolsSpec.stor_outstanding_tokens cstate.
 Axiom init_rates_types : forall n, init_rates n = StructuredPoolsSpec.init_rates n.
 Axiom init_pool_token_types : forall n, init_pool_token n = StructuredPoolsSpec.init_pool_token n.
+Axiom other_none : forall o, other o = None.
+
+(* conditions of the setup that must be enforced by actors *)
+
+Axiom init_pos_rates : forall setup chain ctx cstate t r,
+    init chain ctx setup = Ok cstate -> 
+    FMap.find t (stor_rates cstate) = Some r -> 
+    r > 0.
+
+(* *)
 
 Lemma fmap_find_add : forall (m : FMap token N) k v, 
     FMap.find k (FMap.add k v m) = Some v.
+Proof. auto. Qed.
+
+Lemma fmap_find_add2 : forall (m : FMap token N) k1 k2 v, 
+    k1 <> k2 -> FMap.find k1 (FMap.add k2 v m) = FMap.find k1 m.
 Proof. auto. Qed.
 
 Lemma fmap_add_neq : forall (m : FMap token N) k1 k2 v, 
     k1 <> k2 -> FMap.find k1 (FMap.add k2 v m) = FMap.find k1 m.
 Proof. auto. Qed.
 
-(* the Structured Pools implementation is correct *)
+Lemma n_sub_sub : forall (x y : N),
+    y < x -> x - (x - y) = y.
+Proof.
+    intros * H_lt.
+Admitted.
 
-(* a proof that the Structured Pools implementation is correct *)  
 
 (* the Structured Pools implementation is correct *)
 
@@ -645,55 +682,880 @@ Proof.
         now try inversion H_recv_ok.
     (* trade entrypoint spec *)
     -   unfold trade_entrypoint_check.
+        (* *)
         intros * H_recv_ok.
-        admit.
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        rewrite <- stor_tokens_held_types.
+        rewrite <- stor_rates_types.
+        now exists y, r_x, r_y.
     -   unfold trade_entrypoint_check_2.
+        (* *)
         intros * H_recv_ok.
-        admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        rewrite <- stor_tokens_held_types.
+        rewrite <- stor_rates_types.
+        rewrite <- stor_outstanding_tokens_types.
+        exists x, r_x, r_y, (stor_outstanding_tokens cstate).
+        repeat split; auto;
+        apply N.lt_gt;
+        now apply N.ltb_lt.
+    -   rename H into H_tx, H0 into H_ty,
+               H1 into H_tx_neq_ty, H2 into H_q,
+               H3 into H_recv_ok.
+        do 2 rewrite <- stor_tokens_held_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        rewrite H_tx in *. rewrite H_ty in *.
+        unfold get_bal.
+        rewrite fmap_find_add2; auto.
+        now rewrite fmap_find_add.
+    -   rename H into H_tx, H0 into H_ty,
+               H1 into H_tx_neq_ty, H2 into H_q,
+               H3 into H_recv_ok.
+        do 2 rewrite <- stor_tokens_held_types.
+        rewrite <- stor_rates_types.
+        rewrite <- stor_outstanding_tokens_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        simpl.
+        unfold get_bal.
+        rewrite H_ty. rewrite H_y.
+        rewrite fmap_find_add; auto.
+        rewrite H_tx. rewrite H_x.
+        rewrite n_sub_sub; auto.
+        rewrite <- H_q.
+        unfold get_rate.
+        replace (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        with (Some r_x) by now rewrite H_rx.
+        replace (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        with (Some r_y) by now rewrite H_ry.
+        apply (delta_y_lt_y cstate msg_payload r_x r_y q (stor_outstanding_tokens cstate) x y);
+        auto; try now apply N.ltb_lt.
+        clear H_acts H_cstate H_delta_y_pos.
+        rewrite H_q.
+        apply N.le_ngt.
+        unfold not. intro H_neg.
+        now apply N.ltb_lt in H_neg.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        clear H_acts H_cstate H_delta_y_pos H_qty_nonneg
+              H_k_neg.
+        unfold not.
+        intro H.
+        now apply token_eq_eqb in H.
+    -   rename H into H_recv_ok.
+        do 2 rewrite <- stor_rates_types.
+        rewrite <- stor_outstanding_tokens_types.
+        rewrite <- stor_tokens_held_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        now cbn.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        clear H_acts H_cstate H_delta_y_pos H_qty_nonneg
+              H_k_neg.
+        unfold not.
+        intro H.
+        now apply token_eq_eqb in H.
+    -   rename H into H_recv_ok.
+        repeat rewrite <- stor_rates_types.
+        rewrite <- stor_outstanding_tokens_types.
+        rewrite <- stor_tokens_held_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        now rewrite fmap_find_add.
+    -   rename H into H_recv_ok.
+        repeat rewrite <- stor_rates_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        intros t H_t_neq.
+        now apply fmap_add_neq.
+    -   unfold trade_emits_transfers.
+        (* *)
+        intros * H_recv_ok.
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        exists ({|
+            to_ := ctx_contract_address ctx;
+            transfer_token_id := token_id (token_in_trade msg_payload);
+            amount := qty_trade msg_payload
+          |}).
+        exists ({|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_contract_address ctx;
+                 transfer_token_id := token_id (token_in_trade msg_payload);
+                 amount := qty_trade msg_payload
+               |}]
+          |}).
+        exists [{|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_contract_address ctx;
+                 transfer_token_id := token_id (token_in_trade msg_payload);
+                 amount := qty_trade msg_payload
+               |}]
+          |}].
+        exists {|
+            to_ := ctx_from ctx;
+            transfer_token_id := token_id (token_out_trade msg_payload);
+            amount :=
+              calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                (get_rate (token_out_trade msg_payload) (stor_rates cstate))
+                (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+                (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate))
+          |}.
+        exists {|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_from ctx;
+                 transfer_token_id := token_id (token_out_trade msg_payload);
+                 amount :=
+                   calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                     (get_rate (token_out_trade msg_payload) (stor_rates cstate))
+                     (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+                     (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate))
+               |}]
+          |}.
+        exists [{|
+            from_ := ctx_contract_address ctx;
+            txs :=
+              [{|
+                 to_ := ctx_from ctx;
+                 transfer_token_id := token_id (token_out_trade msg_payload);
+                 amount :=
+                   calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                     (get_rate (token_out_trade msg_payload) (stor_rates cstate))
+                     (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+                     (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate))
+               |}]
+          |}].
+        repeat split; 
+        cbn; try now left.
+    -   rename H into H_recv_ok.
+        repeat rewrite <- stor_tokens_held_types.
+        repeat rewrite <- stor_rates_types.
+        repeat rewrite <- stor_outstanding_tokens_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        unfold get_bal.
+        now rewrite fmap_find_add.
+    -   rename H into H_recv_ok.
+        repeat rewrite <- stor_tokens_held_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        unfold get_bal.
+        rewrite fmap_find_add2.
+        2:{ clear H_acts H_cstate H_delta_y_pos H_qty_nonneg H_k_neg.
+            unfold not.
+            intro H_eq.
+            now apply token_eq_eqb in H_eq. }
+        now rewrite fmap_find_add.
+    -   rename H into H_recv_ok.
+        repeat rewrite <- stor_tokens_held_types.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        cbn.
+        intros t_z H_tz_neq_in H_tz_neq_out.
+        unfold get_bal.
+        repeat rewrite fmap_add_neq; auto.
+    -   unfold trade_outstanding_update.
+        (* *)
+        intros * H_recv_ok.
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        now repeat rewrite <- stor_outstanding_tokens_types.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        repeat rewrite <- stor_tokens_held_types.
+        cbn.
+        rewrite fmap_add_neq; auto.
+        clear H_acts H_cstate.
+        unfold not.
+        intro H_eq.
+        now apply token_eq_eqb in H_eq.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        repeat rewrite <- stor_tokens_held_types.
+        repeat rewrite <- stor_rates_types.
+        repeat rewrite <- stor_outstanding_tokens_types.
+        cbn.
+        now rewrite fmap_find_add.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        clear H_acts H_cstate.
+        apply N.le_ngt.
+        unfold not.
+        now intro H_lt.
+    -   rename H into H_recv_ok.
+        (* *)
+        simpl in H_recv_ok.
+        rewrite <- trade_types in H_recv_ok.
+        unfold trade_entrypoint in H_recv_ok.
+        destruct (FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate))
+        as [x | x] eqn:H_x;
+        try inversion H_recv_ok.  clear H0.
+        destruct ((0 <? x)%N) eqn:H_x_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate))
+        as [y | y] eqn:H_y;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? y)%N) eqn:H_y_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_in_trade msg_payload) (stor_rates cstate))
+        as [r_x | r_x] eqn:H_rx;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_x)%N) eqn:H_rx_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (FMap.find (token_out_trade msg_payload) (stor_rates cstate))
+        as [r_y | r_y] eqn:H_ry;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? r_y)%N) eqn:H_ry_pos.
+        2:{   inversion H_recv_ok. }
+        destruct (token_eqb (token_in_trade msg_payload) (token_out_trade msg_payload)) eqn:H_eqb;
+        try inversion H_recv_ok. clear H0.
+        destruct ((0 <? stor_outstanding_tokens cstate)%N) eqn:H_k_neg.
+        2:{   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? 0)%N eqn:H_qty_nonneg.
+        {   inversion H_recv_ok. }
+        destruct ((calc_delta_y (get_rate (token_in_trade msg_payload) (stor_rates cstate))
+                 (get_rate (token_out_trade msg_payload) (stor_rates cstate)) 
+                 (qty_trade msg_payload) (stor_outstanding_tokens cstate)
+        (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
+        {   inversion H_recv_ok. }
+        inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
+        (* *)
+        clear H_acts H_cstate.
+        apply N.le_ngt.
+        unfold not.
+        now intro H_lt.
     (* other entrypoint specification *)
     -   unfold other_rates_unchanged.
         intros * H_recv_ok t.
-        cbn in H_recv_ok.
         do 2 rewrite <- stor_rates_types.
+        cbn in H_recv_ok.
         unfold receive in H_recv_ok.
-        assert (other o = None) as H_other.
-        {   admit. }
-        rewrite H_other in H_recv_ok.
-        inversion H_recv_ok.
+        now rewrite other_none in H_recv_ok.
     -   unfold other_balances_unchanged.
         intros * H_recv_ok t.
         cbn in H_recv_ok.
         do 2 rewrite <- stor_tokens_held_types.
         unfold receive in H_recv_ok.
-        assert (other o = None) as H_other.
-        {   admit. }
-        rewrite H_other in H_recv_ok.
-        inversion H_recv_ok.
+        now rewrite other_none in H_recv_ok.
     -   unfold other_outstanding_unchanged.
         intros * H_recv_ok.
         cbn in H_recv_ok.
         do 2 rewrite <- stor_outstanding_tokens_types.
         unfold receive in H_recv_ok.
-        assert (other o = None) as H_other.
-        {   admit. }
-        rewrite H_other in H_recv_ok.
-        inversion H_recv_ok.
+        now rewrite other_none in H_recv_ok.
     (* isolate the specification of calc_rx' and calc_delta_y *)
     -   admit.
     -   admit.
@@ -707,24 +1569,32 @@ Proof.
     -   unfold initialized_with_positive_rates.
         intros * H_init_ok. cbn in H_init_ok.
         intros * H_find.
-        admit.
+        rewrite <- stor_rates_types in H_find.
+        now apply (init_pos_rates setup0 chain ctx cstate t r).
     -   unfold initialized_with_zero_balance.
         intros * H_init_ok. cbn in H_init_ok.
         intro.
-        admit.
+        rewrite <- stor_tokens_held_types.
+        unfold init in *. inversion H_init_ok as [H_cstate].
+        cbn.
+        now unfold get_bal.
     -   unfold initialized_with_zero_outstanding.
         intros * H_init_ok. cbn in H_init_ok.
-        admit.
+        rewrite <- stor_outstanding_tokens_types.
+        unfold init in *. inversion H_init_ok as [H_cstate].
+        now cbn.
     -   unfold initialized_with_init_rates.
         intros * H_init_ok. cbn in H_init_ok.
         rewrite <- stor_rates_types.
         rewrite <- init_rates_types.
-        admit.
+        unfold init in *. inversion H_init_ok as [H_cstate].
+        now cbn.
     -   unfold initialized_with_pool_token.
         intros * H_init_ok. cbn in H_init_ok.
         rewrite <- stor_pool_token_types.
         rewrite <- init_pool_token_types.
-        admit.
+        unfold init in *. inversion H_init_ok as [H_cstate].
+        now cbn.
 Admitted.
 
 End StructuredPoolsCorrect.
