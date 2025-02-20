@@ -49,9 +49,6 @@ Inductive msg :=
 | unpool (u : unpool_data)
 | trade (t : trade_data).
 
-(* msg type conforms to msg spec *)
-(* Global Instance msg_is_Msg : Msg_Sepc msg := todo. *)
-
 (* the state type *)
 Record state := build_state {
     stor_rates : FMap token exchange_rate ;
@@ -60,7 +57,6 @@ Record state := build_state {
     stor_outstanding_tokens : N ; 
 }.
 
-(* Global Instance state_is_State : State_Spec state := todo. *)
 
 (* the setup type *)
 Record setup := build_setup {
@@ -68,18 +64,25 @@ Record setup := build_setup {
     init_pool_token : token ;
 }.
 
-(* Global Instance setup_is_Setup : Setup_Spec setup := todo. *)
-
-
 (* the result type *)
 Definition result : Type := ResultMonad.result (state * list ActionBody) error.
 
 Section Serialization.
     Global Instance entrypoint_serializable : Serializable msg := todo.
-    (* Derive Serializable msg_rect<pool,unpool,trade>. *) 
+        (* Derive Serializable msg_rect<pool,unpool,trade>. *)
+
     Global Instance state_serializable : Serializable state := todo.
+        (* Derive Serializable state_rect<build_state>. *)
+        
     Global Instance setup_serializable : Serializable setup := todo.
-    Global Instance error_serializable : Serializable error := todo.
+        (* Derive Serializable setup_rect<build_setup>. *)
+    
+    Global Instance error_serializable : Serializable error.
+    Proof.
+        unfold error.
+        exact N_serializable.
+    Qed.
+
 End Serialization.
 
 (* init function definition *)
@@ -220,19 +223,42 @@ Lemma delta_y_lt_y : forall cstate msg_payload r_x r_y qty_trade k x y,
     FMap.find (token_out_trade msg_payload) (stor_tokens_held cstate) = Some y -> 
     FMap.find (token_in_trade msg_payload) (stor_rates cstate) = Some r_x -> 
     FMap.find (token_out_trade msg_payload) (stor_rates cstate) = Some r_y -> 
+    qty_trade < y ->
     0 < k -> 0 < x -> 0 <= qty_trade -> 0 < r_x -> 0 < r_y ->
     calc_delta_y r_x r_y qty_trade k x < y.
-Admitted.
+Proof.
+    intros * H_x H_y H_rx H_ry H_qtrade H_k H_x' H_qty H_rx' H_ry'.
+    unfold calc_delta_y.
+    apply H_qtrade.
+Qed.
 
 (* rate_decrease property; rates_balance property; rates_balance_2 *)
 Definition calc_rx' (rate_in : N) (rate_out : N) (qty_trade : N) (d : N) (x : N) : N := 
     if (N.eqb rate_in 0) then 0 else 1.
 
 Definition token_eqb (t1 t2 : token) : bool :=
-    N.eqb t1.(token_id) t2.(token_id).
+    N.eqb t1.(token_id) t2.(token_id) && 
+    address_eqb t1.(token_address) t2.(token_address).
+
+Axiom address_eq_eqb : forall a1 a2, address_eqb a1 a2 = true <-> a1 = a2.
 
 Lemma token_eq_eqb : forall t1 t2, token_eqb t1 t2 = true <-> t1 = t2.
-Admitted.
+Proof.
+    intros.
+    unfold token_eqb.
+    split.
+    -   intros H.
+        apply andb_prop in H.
+        destruct H.
+        apply N.eqb_eq in H.
+        apply address_eq_eqb in H0.
+        destruct t1, t2.
+        f_equal; cbn in *; auto.
+    -   intros H.
+        subst. 
+        rewrite N.eqb_refl.
+        now rewrite address_eq_refl.
+Qed.
 
 (* trade entrypoint definition *)
 
@@ -264,6 +290,7 @@ Definition trade_entrypoint
     if (N.ltb delta_y 0) then Err 0 else
     let prev_bal_y := get_bal t_y (stor_tokens_held cstate) in 
     let prev_bal_x := get_bal t_x (stor_tokens_held cstate) in 
+    if (N.ltb q y) then
     (* tokens_held updated appropriately *)
     let stor_tokens_held' :=
         FMap.add t_x (prev_bal_x + delta_x) cstate.(stor_tokens_held) in 
@@ -317,7 +344,10 @@ Definition trade_entrypoint
         stor_outstanding_tokens := cstate.(stor_outstanding_tokens) ; 
     |} in
     Ok (new_state, [ transfer_tx ; transfer_ty ])
-    else Err 0 else Err 0 end else Err 0 end else Err 0 end else Err 0 end.
+    else Err 0 else Err 0 else Err 0 end
+    else Err 0 end
+    else Err 0 end
+    else Err 0 end.
 
 (* receive function definition *)
 Definition receive (_ : Chain) (ctx : ContractCallContext) (st : state) 
@@ -351,9 +381,30 @@ Proof.
     -   intros m.
         exact (None).
 Qed.
-Instance setup_spec : Setup_Spec setup := todo.
-Instance state_spec : State_Spec state := todo.
-Instance error_spec : Error_Spec error := todo.
+Instance setup_spec : Setup_Spec setup.
+Proof.
+    split.
+    -   intros s.
+        exact (init_rates s).
+    -   intros s.
+        exact (init_pool_token s).
+Qed.
+
+Instance state_spec : State_Spec state.
+Proof.
+    split.
+    -   intros s.
+        exact (stor_rates s).
+    -   intros s.
+        exact (stor_tokens_held s).
+    -   intros s.
+        exact (stor_pool_token s).
+    -   intros s.
+        exact (stor_outstanding_tokens s).
+Qed.
+
+Instance error_spec : Error_Spec error.
+Proof. split. auto. Qed.
 
 (* some annoying typing issues with importing the spec *)
 
@@ -726,6 +777,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         rewrite <- stor_tokens_held_types.
@@ -768,6 +821,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         rewrite <- stor_tokens_held_types.
@@ -816,6 +871,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -864,6 +921,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         simpl.
@@ -921,6 +980,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -968,6 +1029,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         now cbn.
@@ -1007,6 +1070,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1054,6 +1119,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1095,6 +1162,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1137,6 +1206,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         exists ({|
@@ -1238,6 +1309,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1280,6 +1353,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1327,6 +1402,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         cbn.
@@ -1370,6 +1447,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         now repeat rewrite <- stor_outstanding_tokens_types.
@@ -1409,6 +1488,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         repeat rewrite <- stor_tokens_held_types.
@@ -1454,6 +1535,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         repeat rewrite <- stor_tokens_held_types.
@@ -1497,6 +1580,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         clear H_acts H_cstate.
@@ -1539,6 +1624,8 @@ Proof.
                  (qty_trade msg_payload) (stor_outstanding_tokens cstate)
         (get_bal (token_in_trade msg_payload) (stor_tokens_held cstate)) <? 0)%N)eqn:H_delta_y_pos.
         {   inversion H_recv_ok. }
+        destruct (qty_trade msg_payload <? y)%N eqn:H_qty_y.
+        2:{   inversion H_recv_ok. }
         inversion H_recv_ok as [[H_cstate H_acts]]. clear H_recv_ok.
         (* *)
         clear H_acts H_cstate.
