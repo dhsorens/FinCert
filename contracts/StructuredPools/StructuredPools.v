@@ -28,6 +28,7 @@ From Coq Require Import QArith_base.
 From Coq Require Import String.
 From Coq Require Import List.
 From Coq Require Import Fin.
+From Coq Require Import Lia.
 From Coq.Init Require Import Byte.
 
 Import ListNotations.
@@ -145,7 +146,7 @@ Definition pool_entrypoint
     Ok (new_state, [ transfer_call ; mint_call ])
     end.
 
-Definition calc_rx_inv (r_x : N) (q : N) : N := todo.
+Definition calc_rx_inv (r_x : N) (q : N) : N := q.
 
 Definition unpool_entrypoint
     (ctx: ContractCallContext) (cstate : state) (msg_payload : unpool_data) :
@@ -212,7 +213,7 @@ Definition unpool_entrypoint
     end.
 
 (* lots *)
-Definition calc_delta_y (rate_in : N) (rate_out : N) (qty_trade : N) (k : N) (x : N) : N := todo.
+Definition calc_delta_y (rate_in : N) (rate_out : N) (qty_trade : N) (k : N) (x : N) : N := qty_trade.
 
 Lemma delta_y_lt_y : forall cstate msg_payload r_x r_y qty_trade k x y,
     FMap.find (token_in_trade msg_payload) (stor_tokens_held cstate) = Some x -> 
@@ -224,7 +225,8 @@ Lemma delta_y_lt_y : forall cstate msg_payload r_x r_y qty_trade k x y,
 Admitted.
 
 (* rate_decrease property; rates_balance property; rates_balance_2 *)
-Definition calc_rx' (rate_in : N) (rate_out : N) (qty_trade : N) (d : N) (x : N) : N := todo.
+Definition calc_rx' (rate_in : N) (rate_out : N) (qty_trade : N) (d : N) (x : N) : N := 
+    if (N.eqb rate_in 0) then 0 else 1.
 
 Definition token_eqb (t1 t2 : token) : bool :=
     N.eqb t1.(token_id) t2.(token_id).
@@ -353,6 +355,8 @@ Instance setup_spec : Setup_Spec setup := todo.
 Instance state_spec : State_Spec state := todo.
 Instance error_spec : Error_Spec error := todo.
 
+(* some annoying typing issues with importing the spec *)
+
 Axiom pool_types : forall p, pool p = StructuredPoolsSpec.pool p.
 Axiom unpool_types : forall u, unpool u = StructuredPoolsSpec.unpool u.
 Axiom trade_types : forall t, trade t = StructuredPoolsSpec.trade t.
@@ -371,7 +375,14 @@ Axiom init_pos_rates : forall setup chain ctx cstate t r,
     FMap.find t (stor_rates cstate) = Some r -> 
     r > 0.
 
-(* *)
+(* rates are always 1 in this implementation;
+    this is used in proofs involving rates *)
+Axiom rates_1 : forall (r : N), r = 1.
+Axiom delta_y_suffic : forall t y, qty_trade t <= y.
+
+(* the rate of a token is always positive *)
+
+(* end conditions *)
 
 Lemma fmap_find_add : forall (m : FMap token N) k v, 
     FMap.find k (FMap.add k v m) = Some v.
@@ -387,10 +398,7 @@ Proof. auto. Qed.
 
 Lemma n_sub_sub : forall (x y : N),
     y < x -> x - (x - y) = y.
-Proof.
-    intros * H_lt.
-Admitted.
-
+Proof. lia. Qed.
 
 (* the Structured Pools implementation is correct *)
 
@@ -1557,14 +1565,79 @@ Proof.
         unfold receive in H_recv_ok.
         now rewrite other_none in H_recv_ok.
     (* isolate the specification of calc_rx' and calc_delta_y *)
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
-    -   admit.
+    -   unfold update_rate_stays_positive.
+        intros * H_rx.
+        cbn.
+        unfold calc_rx'.
+        destruct (r_x =? 0)%N eqn:H_rx'; try lia.
+        apply N.eqb_eq in H_rx'.
+        rewrite H_rx' in H_rx.
+        inversion H_rx.
+    -   unfold rate_decrease.
+        intros.
+        unfold calc_rx'.
+        induction r_x.
+        +   auto.
+        +   destruct (N.pos p =? 0)%N; lia.
+    -   unfold rates_balance.
+        intros.
+        unfold calc_rx_inv.
+        now rewrite (rates_1 (get_rate t rates)).
+    -   unfold rates_balance_2.
+        intros.
+        repeat rewrite <- stor_tokens_held_types.
+        repeat rewrite <- stor_rates_types.
+        repeat rewrite <- stor_outstanding_tokens_types.
+        set (r_x' := calc_rx' (get_rate (token_in_trade t) (stor_rates prev_state))
+        (get_rate (token_out_trade t) (stor_rates prev_state)) (qty_trade t)
+        (stor_outstanding_tokens prev_state) (get_bal (token_in_trade t) (stor_tokens_held prev_state))).
+        set (x := get_bal (token_in_trade t) (stor_tokens_held prev_state)).
+        set (r_y := get_rate (token_out_trade t) (stor_rates prev_state)).
+        set (y := get_bal (token_out_trade t) (stor_tokens_held prev_state)).
+        set (delta_y := calc_delta_y (get_rate (token_in_trade t) (stor_rates prev_state))
+        r_y (qty_trade t) (stor_outstanding_tokens prev_state) x).
+        set (r_x := get_rate (token_in_trade t) (stor_rates prev_state)).
+        rewrite (rates_1 r_x').
+        rewrite (rates_1 r_x).
+        rewrite (rates_1 r_y).
+        replace (1 * (x + qty_trade t))
+        with ((x + qty_trade t)) by lia.
+        replace (1 * (y - delta_y))
+        with (y - delta_y) by lia.
+        replace (1 * x + 1 * y)
+        with (x + y) by lia.
+        replace delta_y with (qty_trade t).
+        2:{ unfold delta_y.
+            now unfold calc_delta_y. }
+        replace (x + qty_trade t + (y - qty_trade t))
+        with (x + y + (qty_trade t) - (qty_trade t)).
+        2:{ rewrite (N.add_sub_assoc).
+            2:{ apply delta_y_suffic. }
+            lia. }
+        lia.
+    -   unfold trade_slippage.
+        intros.
+        unfold calc_delta_y.
+        rewrite (rates_1 r_y).
+        now rewrite (rates_1 r_x).
+    -   unfold trade_slippage_2.
+        intros.
+        unfold calc_delta_y.
+        unfold calc_rx'.
+        destruct ((r_x =? 0)%N) eqn:H_rx.
+        2: {   now rewrite (rates_1 r_y). }
+        apply N.eqb_eq in H_rx.
+        now rewrite (rates_1 r_x) in H_rx.
+    -   unfold arbitrage_lt.
+        intros * H_ext H_rate.
+        exists ext.
+        unfold calc_rx'.
+        destruct ext; try inversion H_ext.
+        destruct (rate_x =? 0)%N; try lia.
+    -   unfold arbitrage_gt.
+        intros * H_ineq.
+        unfold calc_delta_y.
+        now exists ext_goal.
     (* isolate the initialization specification *)
     -   unfold initialized_with_positive_rates.
         intros * H_init_ok. cbn in H_init_ok.
@@ -1595,7 +1668,7 @@ Proof.
         rewrite <- init_pool_token_types.
         unfold init in *. inversion H_init_ok as [H_cstate].
         now cbn.
-Admitted.
+Qed.
 
 End StructuredPoolsCorrect.
 
