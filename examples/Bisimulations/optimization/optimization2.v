@@ -43,8 +43,6 @@ Context { Base : ChainBase }.
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
-Axiom etc : forall {A}, A.
-
 Inductive entrypoint :=
     | addOwner (a : N) (* to add a as an owner ID *)
     | removeOwner (a : N) (* to remove a as an owner ID *)
@@ -70,6 +68,7 @@ Section ErrorCodes.
 End ErrorCodes.
 
 Section Serialization.
+    Axiom etc : forall {A}, A.
     Global Instance entrypoint_serializable : Serializable entrypoint :=
     Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners>.
     Global Instance arr_serializable : Serializable owners_arr := etc.
