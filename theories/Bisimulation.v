@@ -239,7 +239,7 @@ Proof.
 Defined.
 
 (** Lifting Theorem *)
-Definition cm_lift_ctm (f : ContractMorphism C1 C2) : ContractTraceMorphism C1 C2 :=
+Definition cm_to_ctm (f : ContractMorphism C1 C2) : ContractTraceMorphism C1 C2 :=
     build_ct_morph _ _ (state_morph _ _ f) (lift_genesis f) (lift_cstep_morph f).
 
 End LiftingTheorem.
@@ -255,10 +255,10 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {C3 : Contract Setup3 Msg3 State3 Error3}.
 
 (* id lifts to id *)
-Theorem cm_lift_ctm_id :
-    cm_lift_ctm (id_cm C1) = id_ctm C1.
+Theorem cm_to_ctm_id :
+    cm_to_ctm (id_cm C1) = id_ctm C1.
 Proof.
-    unfold cm_lift_ctm, id_ctm.
+    unfold cm_to_ctm, id_ctm.
     simpl.
     apply (eq_ctm_dep C1 C1 (@id State1)).
     apply functional_extensionality_dep.
@@ -278,12 +278,12 @@ Proof.
 Qed.
 
 (* compositions lift to compositions *)
-Theorem cm_lift_ctm_compose 
+Theorem cm_to_ctm_compose 
     (g : ContractMorphism C2 C3) (f : ContractMorphism C1 C2) : 
-    cm_lift_ctm (compose_cm g f) = 
-    compose_ctm (cm_lift_ctm g) (cm_lift_ctm f).
+    cm_to_ctm (compose_cm g f) = 
+    compose_ctm (cm_to_ctm g) (cm_to_ctm f).
 Proof.
-    unfold cm_lift_ctm, compose_ctm.
+    unfold cm_to_ctm, compose_ctm.
     cbn.
     apply (eq_ctm_dep C1 C3 (compose (state_morph C2 C3 g) (state_morph C1 C2 f))).
     apply functional_extensionality_dep.
@@ -323,16 +323,16 @@ Definition is_iso_ctm
 
 (* contract isomorphism -> contract trace isomorphism *)
 Corollary ciso_to_ctiso (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) :
-    is_iso_cm f g -> is_iso_ctm (cm_lift_ctm f) (cm_lift_ctm g).
+    is_iso_cm f g -> is_iso_ctm (cm_to_ctm f) (cm_to_ctm g).
 Proof.
     unfold is_iso_cm, is_iso_ctm.
     intro iso_cm.
     destruct iso_cm as [iso_cm_l iso_cm_r].
-    rewrite <- (cm_lift_ctm_compose g f).
-    rewrite <- (cm_lift_ctm_compose f g).
+    rewrite <- (cm_to_ctm_compose g f).
+    rewrite <- (cm_to_ctm_compose f g).
     rewrite iso_cm_l.
     rewrite iso_cm_r.
-    now repeat rewrite cm_lift_ctm_id.
+    now repeat rewrite cm_to_ctm_id.
 Qed.
 
 End ContractTraceIsomorphism.
@@ -419,13 +419,13 @@ Proof.
     intro c_iso.
     destruct c_iso as [f [g [is_iso_1 is_iso_2]]].
     unfold contracts_bisimilar.
-    exists (cm_lift_ctm f), (cm_lift_ctm g).
+    exists (cm_to_ctm f), (cm_to_ctm g).
     unfold is_iso_ctm.
     split;
-    rewrite <- cm_lift_ctm_compose;
+    rewrite <- cm_to_ctm_compose;
     try rewrite is_iso_1;
     try rewrite is_iso_2;
-    now rewrite cm_lift_ctm_id.
+    now rewrite cm_to_ctm_id.
 Qed.
 
 End ContractBisimulation.

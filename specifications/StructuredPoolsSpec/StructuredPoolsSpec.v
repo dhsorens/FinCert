@@ -31,7 +31,7 @@
 *)
 
 From stdpp Require Import decidable.
-From FinCert.Specifications.FA2Spec Require FA2Spec.
+From FinCert.Specifications.FA2Spec Require Import FA2Spec.
 From ConCert.Execution Require Import Blockchain.
 From ConCert.Execution Require Import BuildUtils.
 From ConCert.Execution Require Import Containers.
@@ -152,7 +152,7 @@ Definition get_bal (t : token) (tokens_held : FMap token N) :=
 
 (* the same function, but named differently for the sake of clarity *)
 Definition get_rate (t : token) (rates : FMap token N) : N :=
-    match FMap.find t rates with | Some r => r | None => 0 end.
+    match FMap.find t rates with | Some r => r | None => 1 end.
 
 End Definitions.
 

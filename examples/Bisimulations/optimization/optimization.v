@@ -4,7 +4,7 @@ From ConCert.Execution Require Import ContractCommon.
 From ConCert.Execution Require Import Monad.
 From ConCert.Execution Require Import ResultMonad.
 From ConCert.Execution Require Import Serializable.
-From ConCert.Execution Require Import ContractMorphisms.
+From FinCert.Meta Require Import ContractMorphisms.
 From ConCert.Utils Require Import RecordUpdate.
 From ConCert.Utils Require Import Extras.
 From Coq Require Import FunctionalExtensionality.
@@ -81,7 +81,6 @@ Definition result' : Type := ResultMonad.result (storage' * list ActionBody) err
 Section Serialization.
     Global Instance entrypoint'_serializable : Serializable entrypoint' := 
     Derive Serializable entrypoint'_rect<incr'>.
-
     Global Instance storage'_serializable : Serializable storage' := todo "".
 End Serialization.
 
