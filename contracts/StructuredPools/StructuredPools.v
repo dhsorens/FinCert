@@ -40,9 +40,6 @@ Context { Base : ChainBase }.
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
-(* TODO *)
-Axiom todo : forall {A}, A.
-
 (* the dntrypoint Type *)
 Inductive msg := 
 | pool (p : pool_data)
@@ -68,14 +65,13 @@ Record setup := build_setup {
 Definition result : Type := ResultMonad.result (state * list ActionBody) error.
 
 Section Serialization.
-    Global Instance entrypoint_serializable : Serializable msg := todo.
-        (* Derive Serializable msg_rect<pool,unpool,trade>. *)
+    Axiom etc : forall {A}, A.
 
-    Global Instance state_serializable : Serializable state := todo.
-        (* Derive Serializable state_rect<build_state>. *)
+    Global Instance entrypoint_serializable : Serializable msg := etc.
+
+    Global Instance state_serializable : Serializable state := etc.
         
-    Global Instance setup_serializable : Serializable setup := todo.
-        (* Derive Serializable setup_rect<build_setup>. *)
+    Global Instance setup_serializable : Serializable setup := etc.
     
     Global Instance error_serializable : Serializable error.
     Proof.
