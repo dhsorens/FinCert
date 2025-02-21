@@ -15,7 +15,7 @@ The formal tools and frameworks developed here thus far are:
 
 We introduce the notion of a *metaspecification*, which is a specification of a specification. Our core assertion here is that one way to evaluate the correctness of a specification is to formally prove things about it. This is the purpose of a metaspecification.
 
-So far we have only done so on one contract, the [structured pool contract](specifications/StructuredPoolsSpec/StructuredPoolsSpec.v), which is an [experimental pooling contract](https://ieeexplore.ieee.org/abstract/document/10174866) designed for [tokenized carbon credits](https://ledger.pitt.edu/ojs/ledger/article/view/294). We hope to do more.
+So far we have only done so on one contract, the [structured pool contract](specifications/StructuredPoolsSpec/StructuredPoolsSpec.v), which is an [experimental pooling contract](https://ieeexplore.ieee.org/abstract/document/10174866) designed for [tokenized carbon credits](https://ledger.pitt.edu/ojs/ledger/article/view/294). We also have an [implementation](contracts/StructuredPools/StructuredPools.v) of the structured pools contract which is proved correct with regards to its specification.
 
 See related papers (most relevant to least):
 * Sorensen, D. (In)Correct Smart Contract Specifications. ICBC 2024.
@@ -24,21 +24,24 @@ See related papers (most relevant to least):
 
 ### Contract Morphisms
 
-We introduce a theoretical tool called a *contract morhpism* in the [contract morphisms module](theories/ContractMorphisms.v). This is a formal, structural relationship between smart contracts. In the `examples/` folder and accompanying [text of my PhD thesis](sorensen-phd-thesis.pdf) there are several examples of using contract morphisms to:
+We also introduce a theoretical tool called a *contract morhpism* in the [contract morphisms module](theories/ContractMorphisms.v). This is a formal, structural relationship between smart contracts. In the `examples/` folder and accompanying [text of my PhD thesis](sorensen-phd-thesis.pdf) there are several examples of using contract morphisms to:
 1. Reuse proofs and properties of previous contract versions when verifying a new contract,
 1. Transport Hoare properties over a morphism,
 1. Specifying upgrades in terms of previous versions,
 1. Formally specifying backwards compatibility, and 
 1. Formally define contract upgradeability via a decomposition into its upgradeability framework and version contracts.
 
-We also use contract morphisms to establish the notion of a *contract bisimulation* in ConCert in the [bisimulation module](theories/Bisimulation.v), which shows a strong structural equivalence between contracts in ConCert and can, in principle, be used for optimizations.
-
 See related paper:
 * Sorensen, D. Towards Formally Specifying and Verifying Smart Contract Upgrades in Coq. FMBC 2024.
 
-### Models of Contract Systems 
+### Equivalences and Bisimulations
 
-Finally, we model systems of contracts with bigraphs in the [contract system module](theories/Bisimulation.v). The aim of this is to be able to specify and formally reason about a system of contracts as if it were a single, monolithic contract. This could prevent incorrect specification of contract systems by separating the core, desired contract behavior from the specification of the contract system infrastructure (how contracts interact).
+We also use contract morphisms to establish the notion of a *contract bisimulation* in ConCert in the [bisimulation module](theories/Bisimulation.v), which shows a strong structural equivalence between contracts in ConCert and can, in principle, be used for optimizations.
+
+More experimentally, we model systems of contracts with bigraphs in the [contract system module](theories/Bisimulation.v). The aim of this is to be able to specify and formally reason about a system of contracts as if it were a single, monolithic contract. This could prevent incorrect specification of contract systems by separating the core, desired contract behavior from the specification of the contract system infrastructure (how contracts interact).
+
+See related paper:
+* Sorensen, D. Formally Specifying Contract Optimizations With Bisimulations in Coq. FMBC 2025.
 
 ## Accompanying Text
 
