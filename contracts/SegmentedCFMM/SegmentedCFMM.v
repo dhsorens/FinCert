@@ -62,11 +62,8 @@ Inductive entrypoint :=
 | observe (p : observe_param)
 | increase_observation_count (p : increase_observation_count_param).
 
-
-
+(* setup type definition *)
 Definition setup := N.
-
-
 
 
 Section Serialization.
