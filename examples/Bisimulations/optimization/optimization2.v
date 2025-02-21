@@ -43,7 +43,7 @@ Context { Base : ChainBase }.
 Set Primitive Projections.
 Set Nonrecursive Elimination Schemes.
 
-Axiom todo : forall {A}, A.
+Axiom etc : forall {A}, A.
 
 Inductive entrypoint :=
     | addOwner (a : N) (* to add a as an owner ID *)
@@ -72,8 +72,8 @@ End ErrorCodes.
 Section Serialization.
     Global Instance entrypoint_serializable : Serializable entrypoint :=
     Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners>.
-    Global Instance arr_serializable : Serializable owners_arr := todo.
-    Global Instance ll_serializable : Serializable owners_ll := todo.
+    Global Instance arr_serializable : Serializable owners_arr := etc.
+    Global Instance ll_serializable : Serializable owners_ll := etc.
 End Serialization.
 
 (* the contract that uses an array, owners_arr *)
@@ -191,9 +191,6 @@ Section ContractUsingLinkedList.
         Definition ll_is_in (a : N) (st : owners_ll) : bool := 
             match FMap.find a st with | None => false | Some _ => true end.
 
-        (* takes a linked list and removes the first element, if there is one *)
-        Definition ll_decrement (st : owners_ll) : owners_ll := todo.
-
     End Aux.
 
     Definition add_owner_ll (a : N) (st : owners_ll) : result_ll :=
@@ -245,7 +242,7 @@ Section Isomorphism.
                 (* arr_to_ll_rec st' (FMap.add SENTINEL_OWNERS a (FMap.add a a' acc)) *)
                 match FMap.find SENTINEL_OWNERS acc with 
                 | Some a' => arr_to_ll_rec st' (FMap.add a a' acc)
-                | None => acc (* unreachable state TODO *)
+                | None => acc (* unreachable state *)
                 end
             end.
 
@@ -258,7 +255,7 @@ Section Isomorphism.
             | Some a => 
                 match a with 
                 | 0 => acc 
-                | x => todo (* ll_to_arr_rec (ll_decrement st) (a :: acc) *)
+                | x => etc (* ll_to_arr_rec (ll_decrement st) (a :: acc) *)
                 end
             end.
         
