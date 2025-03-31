@@ -1000,7 +1000,7 @@ Section Specification.
 
 
     (* proved by contract induction *)
-    Theorem no_duplciates_arr bstate caddr :
+    Theorem no_dup_arr bstate caddr :
         reachable bstate -> 
         env_contracts bstate caddr = Some (C_arr : WeakContract) ->
         (* *)
@@ -1043,11 +1043,11 @@ Section Specification.
     Qed.
 
     (* proved above *)
-    Axiom no_duplciates_rr_aux : forall cstate_arr,
+    Axiom no_duplicates_rr_aux : forall cstate_arr,
         cstate_reachable C_arr cstate_arr -> no_duplicates_arr cstate_arr.
 
     (* proved by morphism induction *)
-    Theorem no_duplciates_ll bstate caddr (trace : ChainTrace empty_state bstate) : 
+    Theorem no_dup_ll bstate caddr (trace : ChainTrace empty_state bstate) : 
         (* Forall reachable states with contract at caddr, *)
         env_contracts bstate caddr = Some (C_ll : WeakContract) ->
         (* cstate is the state of the contract AND *)
@@ -1062,7 +1062,7 @@ Section Specification.
         exists cstate_ll.
         repeat split; auto.
         cbn in H_cm_ind.
-        assert (no_duplicates_arr cstate_arr) as H_nodup by (now apply no_duplciates_rr_aux).
+        assert (no_duplicates_arr cstate_arr) as H_nodup by (now apply no_duplicates_rr_aux).
         now apply (nodup_carried cstate_arr cstate_ll).
     Qed.
         
