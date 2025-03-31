@@ -67,13 +67,10 @@ Section ErrorCodes.
     Definition error_LINK_NOT_FOUND : error := 1.
 End ErrorCodes.
 
-Section Serialization.
-    Axiom etc : forall {A}, A.
-    Global Instance entrypoint_serializable : Serializable entrypoint :=
-    Derive Serializable entrypoint_rect<addOwner,removeOwner,swapOwners>.
-    Global Instance arr_serializable : Serializable owners_arr := etc.
-    Global Instance ll_serializable : Serializable owners_ll := etc.
-End Serialization.
+Axiom etc : forall {A}, A.
+Context {entrypoint_serializable : Serializable entrypoint} 
+        {arr_serializable : Serializable owners_arr}
+        {ll_serializable : Serializable owners_ll}.
 
 (* the contract that uses an array, owners_arr *)
 Section ContractUsingArray.
